@@ -1,0 +1,54 @@
+name: Release
+
+# Push a tag like v1.2.0 to publish a release:
+#   1. set $AppVersion='1.2.0' in DebloatHub.ps1 and add a "## [1.2.0] - date" section to CHANGELOG.md
+#   2. git tag v1.2.0 && git push origin v1.2.0
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that the script version matches the tag
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          if ! grep -q "^\$AppVersion='${ver}'" DebloatHub.ps1; then
+            echo "::error::DebloatHub.ps1 \$AppVersion is not '${ver}' (tag ${GITHUB_REF_NAME})"; exit 1
+          fi
+
+      - name: Build DebloatHub.zip
+        run: |
+          mkdir -p dist/DebloatHub
+          cp DebloatHub.ps1 "Start DebloatHub.bat" README.md CHANGELOG.md dist/DebloatHub/
+          if [ -f LICENSE ]; then cp LICENSE dist/DebloatHub/; fi
+          (cd dist && zip -r -X -9 DebloatHub.zip DebloatHub)
+          cp DebloatHub.ps1 dist/DebloatHub.ps1
+          (cd dist && sha256sum DebloatHub.zip DebloatHub.ps1 > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v h="## [${ver}]" 'index($0,"## ")==1{p=(index($0,h)==1);next} p' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "::error::CHANGELOG.md has no '## [${ver}]' section"; exit 1; fi
+          cat >> notes.md <<'MD'
+
+          ---
+          ### Download
+          **DebloatHub.zip** below: extract it, then double-click `Start DebloatHub.bat` (asks for administrator rights once).
+          If Windows SmartScreen appears, click *More info > Run anyway* (the script is not code-signed).
+          `SHA256SUMS.txt` lists the checksums of the files.
+          MD
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/DebloatHub.zip dist/DebloatHub.ps1 dist/SHA256SUMS.txt \
+            --title "DebloatHub ${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag

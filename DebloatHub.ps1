@@ -2,6 +2,7 @@
 # DebloatHub - curated, previewable, reversible Windows tweaks in one GUI.
 # Run: right-click > "Run with PowerShell" (auto-elevates). Try it in a VM first.
 param([switch]$Elevated,[switch]$ShowConsole)
+$AppVersion='1.0.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
 $isAdmin=(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if(-not $isAdmin -and -not $Elevated){
   # Normal run: console hidden. Add -ShowConsole to keep the console visible for troubleshooting.
@@ -44,7 +45,7 @@ $POL='HKLM:\SOFTWARE\Policies\Microsoft\Windows'
 $SearchBoxMode=2   # SearchboxTaskbarMode: 0 = hidden, 1 = icon only, 2 = search box (Windows 10 and 11), 3 = icon and label (Windows 11 only)
 $CS='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore'
 $s1='Privacy & Telemetry';$s6='AI & Copilot';$s2='Bloatware: Microsoft Apps';$s7='Bloatware: Xbox & Gaming Apps';$s8='Bloatware: Third-Party Promos';$s9='Bloatware: Legacy & Heavy Removals'
-$s3='Start Menu & Ads';$s10='Taskbar & Shell';$s5='Explorer & Usability';$s4='Performance';$s11='Gaming';$s12='Windows Update & System';$s13='Network & DNS';$s14='Maintenance & Repair (one-time actions)'
+$s3='Start Menu & Ads';$s10='Taskbar & Shell';$s5='Explorer & Usability';$s4='Performance';$s11='Gaming';$s12='Windows Update & System';$s13='Network & DNS';$s14='Maintenance & Repair'
 $secs=$s1,$s6,$s2,$s7,$s8,$s9,$s3,$s10,$s5,$s4,$s11,$s12,$s13,$s14
 
 # NVIDIA's telemetry tasks carry a GUID suffix (NvTmMon_{GUID}...), so they are looked up on this PC (root task folder only)
@@ -1050,6 +1051,7 @@ $xaml=@'
 </Grid></Window>
 '@
 $w=[Windows.Markup.XamlReader]::Parse($xaml)
+$w.Title="DebloatHub v$AppVersion"
 'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
 $bc=New-Object Windows.Media.BrushConverter

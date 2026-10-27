@@ -1,15 +1,22 @@
-# DebloatHub
+<h1 align="center">DebloatHub</h1>
 
-**One GUI for the best Windows 10/11 debloat, privacy and performance tweaks — every change previewable, verified and reversible.**
+<p align="center"><b>One GUI for 120+ Windows 10/11 debloat, privacy and performance tweaks.<br>Every change is previewable, verified and reversible.</b></p>
 
-![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
-![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-5391FE)
-![Single file](https://img.shields.io/badge/install-none%20(single%20script)-2E7D32)
+<p align="center">
+  <a href="https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.zip"><img src="https://img.shields.io/badge/Download-DebloatHub.zip-2ea44f?style=for-the-badge&logo=windows&logoColor=white" alt="Download DebloatHub.zip" height="42"></a>
+</p>
 
-DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil, Win11Debloat, Sophia Script, Windows10Debloater, privacy.sexy, RemoveWindowsAI and others) into one dark, sectioned WPF window. Instead of running a script and hoping for the best, you see **what every switch does, who needs it, its pros and cons**, flip only what you want, and press **Apply**. DebloatHub records what was there before, checks that each change really took effect, and can put it back later.
+<p align="center">
+  <a href="https://github.com/GrappurA/DebloatHub/releases/latest"><img src="https://img.shields.io/github/v/release/GrappurA/DebloatHub?label=latest&color=4CC2FF" alt="Latest release"></a>
+  <a href="https://github.com/GrappurA/DebloatHub/releases"><img src="https://img.shields.io/github/downloads/GrappurA/DebloatHub/total?color=B388FF" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 | 11">
+  <img src="https://img.shields.io/badge/PowerShell-5.1-5391FE" alt="PowerShell 5.1">
+  <img src="https://img.shields.io/badge/install-none-2E7D32" alt="No install">
+</p>
 
-<!-- Add a screenshot: save it as docs/screenshot.png and uncomment the next line -->
-<!-- ![DebloatHub main window](docs/screenshot.png) -->
+<p align="center"><img src="docs/screenshot.png" alt="DebloatHub main window: sections on the left, tweaks with risk badges, pros and cons, apply bar and log at the bottom" width="100%"></p>
+
+DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil, Win11Debloat, Sophia Script, Windows10Debloater, privacy.sexy, RemoveWindowsAI and others) into one dark, sectioned WPF window. Instead of running a script and hoping for the best, you see **what every switch does, who needs it and its pros and cons**. You flip only what you want and press **Apply**. DebloatHub records what was there before, checks that each change really took effect, and can put it back later.
 
 ---
 
@@ -39,7 +46,7 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 - **Verified apply.** After each change the real system is checked again. Anything that did not take effect is reported as failed, not as done.
 - **Safety net.** Optional restore point before applying, a Dry run mode that only previews, and a confirmation that lists one-time actions and risky items.
 - **Presets.** *Recommended*, *Privacy* and *Gaming* only move switches; nothing happens until you press Apply. *Reset* returns every switch to the current system state.
-- **Visual Effects presets.** *Maximize looks*, *Recommended* and *Maximize performance* apply live, without a sign-out.
+- **Visual Effects presets.** *Maximize looks*, *Recommended* and *Maximize performance* set the switches; after Apply, the effects change instantly, without a sign-out.
 - **Save and load your selection** as a JSON file to reuse on other PCs.
 - **Version aware.** Windows 10-only and Windows 11-only tweaks are shown as "Not available here" on the other version.
 - **Runs in the background.** Scans and applies run off the UI thread, with a live log, so the window stays responsive.
@@ -48,18 +55,27 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 
 ## Quick start
 
-1. Download `DebloatHub.ps1` and `Start DebloatHub.bat` into the same folder.
+1. **[Download DebloatHub.zip](https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.zip)** and extract it anywhere. Extract it first: do not run it from inside the zip.
 2. Double-click **`Start DebloatHub.bat`** and accept the administrator prompt.
-   (Or right-click `DebloatHub.ps1` › *Run with PowerShell*. It asks for admin rights itself.)
-3. Wait for the first scan, then flip switches, or start from a preset.
+3. Wait for the first scan, then flip switches or start from a preset.
 4. Leave **Restore point first** on, optionally try **Dry run**, and press **Apply**.
 5. Sign out or reboot when the log says so.
+
+> **"Windows protected your PC"?** Windows shows this for any downloaded script that is not code-signed. Click **More info › Run anyway**. Or before extracting, right-click the zip › **Properties** › tick **Unblock** › OK.
+
+**Prefer PowerShell?** Paste this into a PowerShell window. It downloads the script to your Temp folder and starts it, asking for admin rights itself:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol="Tls12"; $p="$env:TEMP\DebloatHub.ps1"; irm https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.ps1 -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p
+```
 
 **Requirements:** Windows 10 or 11 (64-bit), Windows PowerShell 5.1 (built in), administrator rights.
 
 > Tip: try it in a virtual machine first, and read the cards of anything marked **Moderate** or **Advanced**.
 
 To troubleshoot, run `DebloatHub.ps1 -ShowConsole` to keep the console visible. Startup errors are written to `%TEMP%\DebloatHub-error.log`.
+
+All versions and their changes are listed on the [Releases page](https://github.com/GrappurA/DebloatHub/releases) and in [CHANGELOG.md](CHANGELOG.md).
 
 ## What it can change
 
