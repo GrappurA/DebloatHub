@@ -2,6 +2,14 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-10-28
+
+### Fixed
+- **Night light / Settings crash:** the "Phone Link & cross-device services" group could disable the Connected Devices Platform service (CDPSvc). Night light depends on it, so it could no longer be turned on and Settings > Display could crash with SystemSettings.exe error 0x40000015.
+  - CDPSvc is now a separate **Advanced** switch named "Disable Connected Devices Platform (breaks Night light)", with a warning in the Apply confirmation.
+  - The Phone Link group now only contains the Phone Service.
+  - **If you are affected:** switch "Connected Devices Platform" off in DebloatHub (Background Services), press Apply and reboot. Your original setting is restored exactly.
+
 ## [1.0.0] - 2026-10-27
 
 First public release.
