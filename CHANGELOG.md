@@ -2,6 +2,13 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-10-28
+
+### Changed
+- The download zip now contains a short `README.txt` with installation steps, instead of the full GitHub README.
+- Release pages start with installation instructions, followed by the changes.
+- No changes to the tweaks themselves.
+
 ## [1.0.1] - 2026-10-28
 
 ### Fixed

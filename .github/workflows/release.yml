@@ -26,25 +26,45 @@ jobs:
       - name: Build DebloatHub.zip
         run: |
           mkdir -p dist/DebloatHub
-          cp DebloatHub.ps1 "Start DebloatHub.bat" README.md CHANGELOG.md dist/DebloatHub/
+          cp DebloatHub.ps1 "Start DebloatHub.bat" dist/DebloatHub/
+          sed "s/{{VERSION}}/${GITHUB_REF_NAME}/" release/README.txt > dist/DebloatHub/README.txt
           if [ -f LICENSE ]; then cp LICENSE dist/DebloatHub/; fi
           (cd dist && zip -r -X -9 DebloatHub.zip DebloatHub)
           cp DebloatHub.ps1 dist/DebloatHub.ps1
           (cd dist && sha256sum DebloatHub.zip DebloatHub.ps1 > SHA256SUMS.txt && cat SHA256SUMS.txt)
 
-      - name: Release notes from CHANGELOG.md
+      - name: Release notes (installation first, then changes from CHANGELOG.md)
         run: |
           ver="${GITHUB_REF_NAME#v}"
-          awk -v h="## [${ver}]" 'index($0,"## ")==1{p=(index($0,h)==1);next} p' CHANGELOG.md > notes.md
-          if [ ! -s notes.md ]; then echo "::error::CHANGELOG.md has no '## [${ver}]' section"; exit 1; fi
-          cat >> notes.md <<'MD'
-
-          ---
-          ### Download
-          **DebloatHub.zip** below: extract it, then double-click `Start DebloatHub.bat` (asks for administrator rights once).
-          If Windows SmartScreen appears, click *More info > Run anyway* (the script is not code-signed).
-          `SHA256SUMS.txt` lists the checksums of the files.
-          MD
+          awk -v h="## [${ver}]" 'index($0,"## ")==1{p=(index($0,h)==1);next} p' CHANGELOG.md > changes.md
+          if [ ! -s changes.md ]; then echo "::error::CHANGELOG.md has no '## [${ver}]' section"; exit 1; fi
+          {
+            echo "## Installation"
+            echo ""
+            echo "1. Download **DebloatHub.zip** from *Assets* below."
+            echo "2. Extract the whole zip to a folder (do not run it from inside the zip)."
+            echo "3. Double-click **Start DebloatHub.bat** and click **Yes** when Windows asks for administrator rights."
+            echo "4. Wait for the first scan, choose your tweaks (hover a switch for details) and press **Apply**. Keep *Restore point first* on."
+            echo ""
+            echo "> **\"Windows protected your PC\"?** The script is not code-signed. Click **More info > Run anyway**, or before extracting right-click the zip > **Properties** > tick **Unblock**."
+            echo ""
+            echo "**Requirements:** Windows 10 or 11 (64-bit), administrator rights. Nothing to install: DebloatHub is portable."
+            echo ""
+            echo "**Updating:** replace the old files with the new ones; your undo records are kept."
+            echo ""
+            echo "<details><summary>PowerShell one-liner instead of the zip</summary>"
+            echo ""
+            echo '```powershell'
+            echo '[Net.ServicePointManager]::SecurityProtocol="Tls12"; $p="$env:TEMP\DebloatHub.ps1"; irm https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.ps1 -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p'
+            echo '```'
+            echo "</details>"
+            echo ""
+            echo "## What's new in ${GITHUB_REF_NAME}"
+            cat changes.md
+            echo ""
+            echo "---"
+            echo "\`SHA256SUMS.txt\` lists the checksums of the files. Full documentation: [README](https://github.com/GrappurA/DebloatHub#readme)"
+          } > notes.md
 
       - name: Publish release
         env:

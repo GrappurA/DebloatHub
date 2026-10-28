@@ -2,7 +2,7 @@
 # DebloatHub - curated, previewable, reversible Windows tweaks in one GUI.
 # Run: right-click > "Run with PowerShell" (auto-elevates). Try it in a VM first.
 param([switch]$Elevated,[switch]$ShowConsole)
-$AppVersion='1.0.1'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$AppVersion='1.0.2'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
 $isAdmin=(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if(-not $isAdmin -and -not $Elevated){
   # Normal run: console hidden. Add -ShowConsole to keep the console visible for troubleshooting.

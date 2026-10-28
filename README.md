@@ -11,7 +11,7 @@
   <a href="https://github.com/GrappurA/DebloatHub/releases"><img src="https://img.shields.io/github/downloads/GrappurA/DebloatHub/total?color=B388FF" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 | 11">
   <img src="https://img.shields.io/badge/PowerShell-5.1-5391FE" alt="PowerShell 5.1">
-  <img src="https://img.shields.io/badge/install-none-2E7D32" alt="No install">
+  <img src="https://img.shields.io/badge/portable-no%20install%20needed-2E7D32" alt="Portable, no install needed">
 </p>
 
 <p align="center"><img src="docs/screenshot.png" alt="DebloatHub main window: sections on the left, tweaks with risk badges, pros and cons, apply bar and log at the bottom" width="100%"></p>
@@ -55,7 +55,7 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 
 ## Quick start
 
-1. **[Download DebloatHub.zip](https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.zip)** and extract it anywhere. Extract it first: do not run it from inside the zip.
+1. **[Download DebloatHub.zip](https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.zip)** and extract it anywhere (the zip contains a short `README.txt` with these steps). Extract it first: do not run it from inside the zip.
 2. Double-click **`Start DebloatHub.bat`** and accept the administrator prompt.
 3. Wait for the first scan, then flip switches or start from a preset.
 4. Leave **Restore point first** on, optionally try **Dry run**, and press **Apply**.
