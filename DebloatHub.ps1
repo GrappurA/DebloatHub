@@ -2,7 +2,8 @@
 # DebloatHub - curated, previewable, reversible Windows tweaks in one GUI.
 # Run: right-click > "Run with PowerShell" (auto-elevates). Try it in a VM first.
 param([switch]$Elevated,[switch]$ShowConsole)
-$AppVersion='1.0.2'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$AppVersion='1.1.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$MyPath=$PSCommandPath
 $isAdmin=(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if(-not $isAdmin -and -not $Elevated){
   # Normal run: console hidden. Add -ShowConsole to keep the console visible for troubleshooting.
@@ -485,7 +486,10 @@ if(Get-Service -Name 'NVDisplay.ContainerLocalSystem' -ErrorAction SilentlyConti
 # Only services that exist on this PC are listed. Disabling a service that is already Manual and not running changes nothing,
 # so the groups below are services that commonly RUN on home PCs (or start on a trigger) and that many people never need.
 $sSvc='Background Services'
-$haveSvc=@{};try{foreach($x in @(Get-Service -ErrorAction SilentlyContinue)){$haveSvc[$x.Name]=1}}catch{}
+$haveSvc=@{};$svcName=@{};try{foreach($x in @(Get-Service -ErrorAction SilentlyContinue)){$haveSvc[$x.Name]="$($x.StartType)";$svcName[$x.Name]=$x.DisplayName}}catch{}
+# Manual (default): "turn off" = start only when something asks for it (features keep working, nothing crashes on a refused start).
+# Strict: "turn off" = Disabled (never starts, even when asked). Changing the mode restarts DebloatHub because the actions are built here.
+$SvcStrict=$false;try{$SvcStrict=((Get-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name ServiceMode -ErrorAction Stop).ServiceMode -eq 'Strict')}catch{}
 $SVCINFO=[ordered]@{
  Spooler='Print Spooler: every printer and virtual printer (Microsoft Print to PDF, OneNote, PDF printers) needs it.'
  PrintNotify='Printer Extensions and Notifications: printer pop-ups, ink levels and vendor print dialogs.'
@@ -521,15 +525,33 @@ $SVCINFO=[ordered]@{
  edgeupdate='Edge Update: background Edge updates (Edge scheduled tasks also update it).'
 }
 foreach($k in @($SVCINFO.Keys)){$LBL[$k]=($SVCINFO[$k] -split ':')[0]}
-function SvcGroup($name,$desc,$risk,$items,$rec,$m){   # $items: @(service, 'D' = disable | 'M' = manual, fallback start type for undo)
- $acts=@(foreach($i in $items){if($haveSvc.ContainsKey($i[0])){if($i[1] -eq 'M'){fSvm $i[0] $i[2]}else{fSvc $i[0] $i[2]}}})
+# snapshot ids (defined early: SvcGroup needs Snap-Read while the tweak list is built)
+function Snap-Hash($k,$a){'S_'+([BitConverter]::ToString([Security.Cryptography.SHA1]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes("$k|$($a.P)|$($a.A)|$($a.N)"))).Replace('-','').Substring(0,20))}
+function Snap-Id($a){Snap-Hash $(if($a.K -eq 'SvcM'){'Svc'}else{$a.K}) $a}   # Disabled and Manual share ONE record: switching mode never loses the original start type
+function Snap-Ids($a){@(Snap-Id $a)+@(if($a.K -eq 'SvcM'){Snap-Hash 'SvcM' $a})}  # + ids written by v1.0.x
+function Snap-Read($a){foreach($id in (Snap-Ids $a)){$v=(Get-ItemProperty -Path 'HKLM:\SOFTWARE\DebloatHub\Snapshots' -Name $id -ErrorAction SilentlyContinue).$id;if($v){return ($v|ConvertFrom-Json)}}}
+function SvcGroup($name,$desc,$risk,$items,$rec,$m,[switch]$Fixed){
+ # $items: @(service, 'D' | 'M', fallback start type for undo). Names may contain * (e.g. GoogleUpdaterService*).
+ #   'D' = turn off: Manual in Manual mode, Disabled in Strict mode (or always Disabled with -Fixed)
+ #   'M' = always Manual (updaters, G-Helper's Armoury Crate list)
+ $acts=@();$skip=@()
+ foreach($i in $items){
+  $names=if($i[0] -like '*`**'){@($haveSvc.Keys|Where-Object{$_ -like $i[0]}|Sort-Object)}elseif($haveSvc.ContainsKey($i[0])){,$i[0]}else{@()}
+  foreach($n in $names){
+   if(-not $LBL.ContainsKey($n) -and $svcName[$n]){$LBL[$n]=$svcName[$n]}
+   if($i[1] -eq 'M'){$acts+=fSvm $n $i[2];continue}
+   if($Fixed -or $SvcStrict){$acts+=fSvc $n $i[2];continue}
+   $a=fSvm $n $i[2]                                                     # Manual mode: applied = not Automatic (Manual or Disabled)
+   if($haveSvc[$n] -in 'Manual','Disabled' -and -not(Snap-Read $a)){$skip+="$($LBL[$n])$(if($haveSvc[$n] -eq 'Disabled'){' (already Disabled)'})";continue}   # not Automatic and untouched by DebloatHub: nothing to do in Manual mode
+   $acts+=$a}}
+ if($skip.Count){$desc+=" Not listed because they already do not start at boot on this PC (Strict mode lists them): $($skip -join ', ')."}
  if(-not $acts.Count){return}
  $script:db+=fTw $sSvc $name $desc $risk $sd Any '' $acts $rec;$script:more[$name]=$m}
 
 SvcGroup 'Printing & scanning services' 'Turns off printing, fax and scanner services. Each service has its own switch: e.g. keep Print Spooler for printing and PDF, but turn off Fax.' Moderate @(@('Spooler','D','Automatic'),@('PrintNotify','D','Manual'),@('Fax','D','Manual'),@('stisvc','D','Manual')) 'Most home PCs never fax; many never print or scan. Keep Print Spooler if you print OR use "Microsoft Print to PDF".' @('Turn off what you never use: Fax for almost everyone, Spooler and WIA only if you never print, save to PDF or scan.','Print Spooler is one of the most attacked Windows services (PrintNightmare); fewer services start at boot.','Without Spooler: no printing and no Microsoft Print to PDF. Without WIA: scanners and Windows Scan stop working. Switch back on any time.')
 SvcGroup 'Xbox & Game Pass services' 'Turns off the Xbox sign-in, cloud-save, networking and accessory services. They start on demand when an Xbox-enabled game or app runs.' Moderate @(@('XblAuthManager','D','Manual'),@('XblGameSave','D','Manual'),@('XboxNetApiSvc','D','Manual'),@('XboxGipSvc','D','Manual')) 'Only if you play no Game Pass or Microsoft Store games. Steam, Epic and other launchers do not need them.' @('Use it if you do not play Game Pass or Microsoft Store games. Keep everything if you do.','Xbox components can no longer wake up in the background; fewer processes during gaming.','Game Pass and Store games cannot sign in, sync saves or join multiplayer. Xbox Accessories app and controller firmware updates stop.')
 SvcGroup 'Phone Link & cross-device services' 'Turns off the Phone Service, which handles calls through Phone Link. (Connected Devices Platform is a separate switch below because it breaks Night light.)' Moderate @(,@('PhoneSvc','D','Manual')) 'Only if you never make calls through Phone Link.' @('Use it if you do not make or take phone calls on this PC through Phone Link.','The phone-call service cannot start in the background.','Calls through Phone Link stop working; texts, photos and notifications in Phone Link are not affected.')
-SvcGroup 'Disable Connected Devices Platform (breaks Night light)' 'Disables the Connected Devices Platform service (CDPSvc). WARNING: Night light depends on it: after a reboot Night light cannot be turned on and Settings > Display can crash (SystemSettings.exe error 0x40000015). It also powers Phone Link, Nearby sharing and some cast/pairing features.' Advanced @(,@('CDPSvc','D','Automatic')) 'Do NOT use it if you use Night light. Only for PCs that never use Night light, Phone Link or Nearby sharing.' @('Only if you never use Night light, Phone Link, Nearby sharing or Share with nearby devices.','One busy background service is gone; some users see less CPU and battery use.','BREAKS Night light (cannot be switched on) and can crash Settings > Display; Phone Link and Nearby sharing stop. To fix: switch this off, Apply and reboot.')
+SvcGroup -Fixed 'Disable Connected Devices Platform (breaks Night light)' 'Disables the Connected Devices Platform service (CDPSvc). WARNING: Night light depends on it: after a reboot Night light cannot be turned on and Settings > Display can crash (SystemSettings.exe error 0x40000015). It also powers Phone Link, Nearby sharing and some cast/pairing features.' Advanced @(,@('CDPSvc','D','Automatic')) 'Do NOT use it if you use Night light. Only for PCs that never use Night light, Phone Link or Nearby sharing.' @('Only if you never use Night light, Phone Link, Nearby sharing or Share with nearby devices.','One busy background service is gone; some users see less CPU and battery use.','BREAKS Night light (cannot be switched on) and can crash Settings > Display; Phone Link and Nearby sharing stop. To fix: switch this off, Apply and reboot.')
 SvcGroup 'Windows Hello biometrics service' 'Turns off the Windows Biometric Service (fingerprint and face sign-in).' Moderate @(,@('WbioSrvc','D','Manual')) 'Only if you sign in with a PIN or password. Keep it if you use a fingerprint reader or IR face camera.' @('Use it on PCs without a fingerprint reader / IR camera, or if you never use them.','One less service; the biometric stack cannot wake up.','Fingerprint and face sign-in stop working; PIN and password still work.')
 SvcGroup 'Bluetooth services' 'Turns off Bluetooth support, hands-free audio and media-button services.' Advanced @(@('bthserv','D','Manual'),@('BTAGService','D','Manual'),@('BthAvctpSvc','D','Manual')) 'Only on PCs that never use Bluetooth. If you only skip headset calls, turn off just Bluetooth Audio Gateway.' @('Use it only if this PC never uses Bluetooth.','No Bluetooth background services or radio scanning.','ALL Bluetooth devices stop working (mice, keyboards, headphones, controllers), including ones already paired.')
 SvcGroup 'Network sharing & discovery services' 'Turns off sharing this PC''s files/printers and announcing or discovering devices on the local network. Opening shares on OTHER PCs or a NAS keeps working.' Moderate @(@('LanmanServer','D','Automatic'),@('FDResPub','D','Manual'),@('SSDPSRV','D','Manual'),@('upnphost','D','Manual')) 'Good for laptops on public Wi-Fi. Keep SSDP Discovery if you cast to a smart TV or use DLNA media servers.' @('Use it if you never share folders from this PC and do not cast to TVs or DLNA devices.','This PC is no longer advertised on the network; smaller attack surface on public Wi-Fi.','Other PCs cannot open this PC''s shared folders/printers; Cast to device and DLNA discovery may stop. Mapped drives to other PCs are not affected.')
@@ -538,9 +560,10 @@ SvcGroup 'IP Helper (IPv6 tunnelling)' 'Turns off IP Helper, which provides IPv6
 SvcGroup 'Diagnostics & troubleshooting services' 'Turns off problem detection, diagnostic hosts, the troubleshooter service and the Windows 11 inventory/compatibility service.' Advanced @(@('DPS','D','Automatic'),@('WdiServiceHost','D','Manual'),@('WdiSystemHost','D','Manual'),@('diagsvc','D','Manual'),@('InventorySvc','D','Manual')) 'Only for experienced users; switch it back on before you troubleshoot anything.' @('Use it if you never run Windows troubleshooters and want fewer background diagnostics.','Fewer background scans; stops the inventory service that feeds compatibility telemetry.','Troubleshooters and "Diagnose" for network problems stop working; Windows no longer detects and suggests fixes for problems.')
 $asusD='ArmouryCrateControlInterface','ArmouryCrateProArtService','AsHidService','ASUSOptimization','AsusAppService','ASUSLinkNear','ASUSLinkRemote','ASUSSoftwareManager','ASUSLiveUpdateAgent','ASUSSwitch','ASUSSystemAnalysis','ASUSSystemDiagnosis','ASUSXGMobileService','AsusCertService'
 $asusM='ArmouryCrateSEService','ArmouryCrateService','LightingService'
-SvcGroup 'ASUS services (replaced by G-Helper)' 'Turns off the ASUS background services that G-Helper replaces, exactly like G-Helper''s Extra > "Stop" button: MyASUS/Armoury Crate helpers are disabled, Armoury Crate and Aura lighting services are set to Manual. The touchpad service is never touched.' Moderate (@($asusD|ForEach-Object{,@($_,'D','Automatic')})+@($asusM|ForEach-Object{,@($_,'M','Automatic')})) 'Only if you use G-Helper instead of Armoury Crate / MyASUS. Pick individually to keep e.g. Live Update or Link to MyASUS.' @('Use it if G-Helper handles your performance modes, fans, GPU modes and hotkeys.','Often 5-15 fewer background processes and less RAM and CPU; no ASUS telemetry or update nags.','Armoury Crate, MyASUS, Aura lighting sync and ASUS Live Update stop working until switched back on. Without G-Helper running, some Fn hotkeys may stop working.')
+SvcGroup -Fixed 'ASUS services (replaced by G-Helper)' 'Turns off the ASUS background services that G-Helper replaces, exactly like G-Helper''s Extra > "Stop" button: MyASUS/Armoury Crate helpers are disabled, Armoury Crate and Aura lighting services are set to Manual. The touchpad service is never touched.' Moderate (@($asusD|ForEach-Object{,@($_,'D','Automatic')})+@($asusM|ForEach-Object{,@($_,'M','Automatic')})) 'Only if you use G-Helper instead of Armoury Crate / MyASUS. Pick individually to keep e.g. Live Update or Link to MyASUS.' @('Use it if G-Helper handles your performance modes, fans, GPU modes and hotkeys.','Often 5-15 fewer background processes and less RAM and CPU; no ASUS telemetry or update nags.','Armoury Crate, MyASUS, Aura lighting sync and ASUS Live Update stop working until switched back on. Without G-Helper running, some Fn hotkeys may stop working.')
 foreach($k in @('ArmouryCrateControlInterface','ArmouryCrateProArtService','AsHidService','ASUSOptimization','AsusAppService','ASUSLinkNear','ASUSLinkRemote','ASUSSoftwareManager','ASUSLiveUpdateAgent','ASUSSwitch','ASUSSystemAnalysis','ASUSSystemDiagnosis','ASUSXGMobileService','AsusCertService','ArmouryCrateSEService','ArmouryCrateService','LightingService')){if(-not $LBL.ContainsKey($k)){$LBL[$k]=$k}}
 
+SvcGroup -Fixed 'Third-party updaters & helpers: start on demand' 'Sets background updater and vendor telemetry services from Automatic to Manual: Google (Chrome) Update, Brave Update, Adobe Acrobat/Creative Cloud update and genuine-check services, Dropbox Update, HP Touchpoint Analytics and HP diagnostics, Dell SupportAssist, AMD User Experience Program and Crash Defender, Killer Analytics. Only services installed on this PC are listed.' Safe @(@('gupdate','M','Automatic'),@('GoogleUpdaterService*','M','Automatic'),@('GoogleUpdaterInternalService*','M','Automatic'),@('brave','M','Automatic'),@('AdobeARMservice','M','Automatic'),@('AdobeUpdateService','M','Automatic'),@('AGSService','M','Automatic'),@('AGMService','M','Automatic'),@('dbupdate','M','Automatic'),@('HpTouchpointAnalyticsService','M','Automatic'),@('HPDiagsCap','M','Automatic'),@('HPSysInfoCap','M','Automatic'),@('SupportAssistAgent','M','Automatic'),@('AUEPLauncher','M','Automatic'),@('AMD Crash Defender Service','M','Automatic'),@('KAPSService','M','Automatic')) 'Recommended: the apps still update through their own scheduled tasks or when you open them.' @('Use it if these services run all the time just to check for updates or collect usage data.','Fewer always-running processes at boot; less background network and disk activity.','Updates may arrive a little later (when the app or its scheduled task runs). Dell SupportAssist and HP Support Assistant may need a moment to start, or show "service not running" until you open them again.')
 # fewer svchost.exe processes: Windows gives each service its own svchost when RAM > this threshold (3.5 GB by default)
 $db+=fTw $sSvc 'Group services into fewer svchost processes' 'Raises SvcHostSplitThresholdInKB above any RAM size, so Windows groups related services into shared svchost.exe processes again, as it did before Windows 10 1703 (or on PCs with under 3.5 GB RAM). Reboot needed.' Moderate $sd Any '' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control' SvcHostSplitThresholdInKB 0x7FFFFFFF 3670016) 'Mostly cosmetic: it lowers the process count, not CPU use. Undo restores the original value (default 3.5 GB).'
 $more['Group services into fewer svchost processes']=@('Use it if the long list of "Service Host" processes bothers you or you want a lower process count. It does not make games or apps faster.','Often dozens fewer svchost.exe processes and a little less RAM overhead.','Less isolation: if one service crashes, the others in the same process restart with it; Task Manager can no longer show which single service in a group uses CPU. Some services always keep their own process.')
@@ -564,6 +587,26 @@ $db=@($db|ForEach-Object{$t=$_;$new=$t.Sec;$ord=0
  else{foreach($g in $gk){$j=[array]::IndexOf(@($grp[$g]),$t.Sec);if($j -ge 0){$new=$g;$ord=$j;break}}}
  $t.Sec=$new;[pscustomobject]@{T=$t;G=[array]::IndexOf($gk,$new);O=$ord;I=$ix};$ix++}|Sort-Object G,O,I|ForEach-Object{$_.T})
 $secs=@($gk|Where-Object{$g=$_;@($db|Where-Object{$_.Sec -eq $g}).Count})
+
+# ---------- Recommended preset: one explicit, reviewable list ----------
+# Rules: (1) a performance or privacy win, (2) nothing a typical user relies on stops working, (3) undoable with one click
+# (so no app removals and no one-time cleanups). Whole tweak = its name; a single sub-switch = 'Tweak name|Sub-switch label'.
+$RECOMMENDED=@(
+ 'Disable telemetry & diagnostic services','Disable telemetry scheduled tasks','Disable app-compatibility telemetry (Inventory Collector, Steps Recorder)'
+ 'Disable NVIDIA telemetry (telemetry container, NvTm* tasks, opt-in flag)','Disable Office telemetry (diagnostic data "Neither", legacy Telemetry Agent)'
+ 'Disable advertising ID','Disable Activity History','Disable tailored experiences','Disable web results in Start search','Disable Customer Experience Improvement Program','Disable feedback prompts'
+ 'Disable Windows Recall / AI data analysis','Disable Click to Do','Disable Copilot'
+ 'Disable Edge startup boost & background mode','Quiet Edge: no sidebar, shopping assistant or first-run','Edge: turn off diagnostic data, personalization & feedback'
+ 'Chrome: turn off metrics, reports & Privacy Sandbox ad tracking','Firefox: turn off telemetry, studies, Pocket & feedback'
+ 'VS Code: turn off telemetry, feedback prompts & experiments','Visual Studio: turn off telemetry (Customer Experience Improvement Program)'
+ 'Developer CLIs: turn off telemetry (.NET, PowerShell 7, Next.js, Nuxt, Astro, Gatsby, Angular, Storybook, Turborepo, vcpkg, Terraform/Prisma, AWS SAM, Azure CLI, DO_NOT_TRACK)'
+ 'Disable Start/Settings suggestions & silent app installs','Disable lock screen tips & ads','Disable Widgets','Disable News and Interests','Disable search highlights','Show file extensions'
+ 'Disable Game DVR / background capture','Stop NVIDIA services while the dGPU is off (G-Helper Eco)'
+ 'Set rarely-used services to start on demand','Third-party updaters & helpers: start on demand'
+ 'Disable Delivery Optimization (P2P uploads)','Disable device metadata downloads','Disable AutoPlay/AutoRun for removable drives','Disable Remote Assistance'
+)+$vfxRec
+function Is-Rec($u){($RECOMMENDED -contains $u.T.Name) -or ($RECOMMENDED -contains $u.Key)}
+function Is-RecT($t){($RECOMMENDED -contains $t.Name) -or @($RECOMMENDED|Where-Object{$_.StartsWith("$($t.Name)|",[StringComparison]::Ordinal)}).Count}
 
 # ---------- Engine ----------
 function Show-Act($a){switch($a.K){
@@ -605,10 +648,8 @@ function Do-Act($a,$undo){switch($a.K){
 
 # ---------- Original-state snapshots: Apply records what was there BEFORE the change, Undo puts exactly that back ----------
 function Safe-Test($a){try{Test-Act $a}catch{$null}}
-function Snap-Id($a){'S_'+([BitConverter]::ToString([Security.Cryptography.SHA1]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes("$($a.K)|$($a.P)|$($a.A)|$($a.N)"))).Replace('-','').Substring(0,20))}
-function Snap-Read($a){$id=Snap-Id $a;$v=(Get-ItemProperty -Path 'HKLM:\SOFTWARE\DebloatHub\Snapshots' -Name $id -ErrorAction SilentlyContinue).$id;if($v){$v|ConvertFrom-Json}}
 function Snap-Write($a,$o){$k='HKLM:\SOFTWARE\DebloatHub\Snapshots';if(-not(Test-Path $k)){New-Item $k -Force|Out-Null};New-ItemProperty -Path $k -Name (Snap-Id $a) -Value ($o|ConvertTo-Json -Compress -Depth 20) -PropertyType String -Force|Out-Null}
-function Snap-Clear($a){Remove-ItemProperty -Path 'HKLM:\SOFTWARE\DebloatHub\Snapshots' -Name (Snap-Id $a) -ErrorAction SilentlyContinue}
+function Snap-Clear($a){foreach($id in (Snap-Ids $a)){Remove-ItemProperty -Path 'HKLM:\SOFTWARE\DebloatHub\Snapshots' -Name $id -ErrorAction SilentlyContinue}}
 function Snap-Capture($a){switch($a.K){          # what is on the system right now (pure data); $null = this kind has no snapshot
  'Reg'{$k=Get-Item -LiteralPath $a.P -ErrorAction SilentlyContinue
    if($k -and ($k.GetValueNames() -contains $a.N)){$kind=$k.GetValueKind($a.N).ToString();$v=$k.GetValue($a.N,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
@@ -627,7 +668,7 @@ function Snap-Capture($a){switch($a.K){          # what is on the system right n
  default{$null}}}
 function Snap-Take($a,$before){                  # $before = Test-Act result BEFORE the change
  if($a.K -in 'App','Cmd'){return}
- if($before -eq $false -or ($null -eq $before -and -not(Snap-Read $a))){      # only when we are looking at the genuine original; never overwrite it with an already-applied state
+ if($before -ne $true -and -not(Snap-Read $a)){      # record only the genuine original: never overwrite an existing record (it is cleared on undo)
   try{$c=Snap-Capture $a;if($null -ne $c){Snap-Write $a $c}}catch{Log "   (could not record the original of this setting: $($_.Exception.Message))"}}}
 function Snap-Restore($a,$s){switch($a.K){
  'Reg'{if($s.exists){$v=$s.value
@@ -842,7 +883,7 @@ function Log($m){[void]$sync.Q.Enqueue("$m")}
 function Get-FnText($n){$c=Get-Command $n -CommandType Function;$a=$c.ScriptBlock.Ast
  if($a -isnot [Management.Automation.Language.FunctionDefinitionAst] -and $a.Parent -is [Management.Automation.Language.FunctionDefinitionAst]){$a=$a.Parent}
  if($a -is [Management.Automation.Language.FunctionDefinitionAst]){$a.Extent.Text}else{"function $n {`n$($c.ScriptBlock.ToString())`n}"}}
-$ENGINE_TXT=$PRE+"`n"+((@('Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Id','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
+$ENGINE_TXT=$PRE+"`n"+((@('Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
 # ---------- Thread safety: WPF objects (CheckBox, Border...) live ONLY on the UI thread ----------
 # Background runspaces receive plain snapshots (strings, numbers, bools, arrays, hashtables) and return plain hashtables.
 function Copy-Act($a){$c=@{};foreach($k in $a.Keys){$c[$k]=$a[$k]};$c}      # acts hold only strings/numbers/bools/$null
@@ -1055,6 +1096,7 @@ $xaml=@'
 $w=[Windows.Markup.XamlReader]::Parse($xaml)
 $w.Title="DebloatHub v$AppVersion"
 'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
+$pSafe.ToolTip='Recommended: performance and privacy tweaks that keep every common feature working and can all be undone with one click (no app removals, no cleanups). Tweaks in this preset carry a "Recommended" badge.'
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
 $bc=New-Object Windows.Media.BrushConverter
 function Badge($t,$c,$tip){$b=New-Object Windows.Controls.Border;$b.Background=$bc.ConvertFromString($c)
@@ -1073,6 +1115,18 @@ foreach($sec in $secs){
  $hd=New-Object Windows.Controls.DockPanel;$hd.Margin=[Windows.Thickness]::new(8,0,8,8)
  $cn=New-Object Windows.Controls.TextBlock;$cn.FontSize=12;$cn.VerticalAlignment='Center';$cn.Foreground=$accent;[Windows.Controls.DockPanel]::SetDock($cn,'Right');[void]$hd.Children.Add($cn);$secCnt+=$cn
  $h=New-Object Windows.Controls.TextBlock;$h.Text=$sec;$h.FontSize=17;$h.FontWeight=[Windows.FontWeights]::SemiBold;[void]$hd.Children.Add($h);[void]$sp.Children.Add($hd)
+ if($sec -eq $sSvc){$mp=New-Object Windows.Controls.StackPanel;$mp.Margin=[Windows.Thickness]::new(8,0,8,10)
+  $mc=New-Object Windows.Controls.CheckBox;$mc.Style=$w.FindResource('Sw');$mc.Content='Strict mode: Disabled instead of Manual';$mc.IsChecked=$SvcStrict
+  $mc.ToolTip='Manual (default): Windows can still start a service when an app or feature asks for it, so nothing breaks or crashes; it just no longer runs all the time. Strict: services are Disabled and never start. Use Strict only for services you are sure you never need.'
+  $mc.Add_Click({param($s,$e) $want=[bool]$s.IsChecked;$s.IsChecked=$SvcStrict
+   if($script:busy){return}
+   if([Windows.MessageBox]::Show("Switch the Background Services section to $(if($want){'Strict (Disabled)'}else{'Manual'}) mode?`n`nDebloatHub restarts to rebuild the switches. Changes you have not applied yet are lost. Services you already changed keep their current state (a Disabled service still counts as switched on in Manual mode; to make it Manual, switch it off, Apply, then on again). The original start type stays recorded for undo.",'DebloatHub','YesNo','Question') -ne 'Yes'){return}
+   try{if(-not(Test-Path 'HKCU:\SOFTWARE\DebloatHub')){New-Item 'HKCU:\SOFTWARE\DebloatHub' -Force|Out-Null};New-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name ServiceMode -Value $(if($want){'Strict'}else{'Manual'}) -PropertyType String -Force|Out-Null}catch{Log "! could not save the mode: $($_.Exception.Message)";return}
+   Start-Process powershell -WindowStyle $(if($ShowConsole){'Normal'}else{'Hidden'}) -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$MyPath`" -Elevated$(if($ShowConsole){' -ShowConsole'})";$w.Close()})
+  [void]$mp.Children.Add($mc)
+  $md=New-Object Windows.Controls.TextBlock;$md.TextWrapping='Wrap';$md.FontSize=11;$md.Foreground=$bc.ConvertFromString('#9A9A9A');$md.Margin=[Windows.Thickness]::new(56,2,0,0)
+  $md.Text=$(if($SvcStrict){'Strict mode: switched-on services are Disabled and never start, even when an app asks for them. Features that need them stop working.'}else{'Manual mode: switched-on services stop starting at boot, but Windows still starts them when an app or feature asks. Nothing crashes; they just stop running all the time. Services that already work this way are not listed.'})
+  [void]$mp.Children.Add($md);[void]$sp.Children.Add($mp)}
  if($sec -eq $s20){$pr=New-Object Windows.Controls.WrapPanel;$pr.Margin=[Windows.Thickness]::new(8,0,0,2)
   foreach($pn in 'Maximize looks','Recommended','Maximize performance'){$bt=New-Object Windows.Controls.Button;$bt.Content=$pn;$bt.Tag=$pn;$bt.Style=$w.FindResource('Btn');if($pn -eq 'Recommended'){$bt.Background=$accent;$bt.Foreground=[Windows.Media.Brushes]::Black}
    $bt.Add_Click({param($s,$e) Set-Preset $s.Tag});[void]$pr.Children.Add($bt)}
@@ -1094,6 +1148,7 @@ foreach($sec in $secs){
   [void]$top.Children.Add((Badge $t.Risk $rc ''))
   if(($t.Prof -split ',') -contains 'telemetry'){[void]$top.Children.Add((Badge 'ON = telemetry off' '#00695C' ''))}
   $n=($t.Src -split ',').Count
+  if(Is-RecT $t){[void]$top.Children.Add((Badge 'Recommended' '#4527A0' ''))}
   [void]$top.Children.Add((Badge "$n tool$(if($n -gt 1){'s'})" '#1565C0' ''))
   if($t.Win -ne 'Any'){[void]$top.Children.Add((Badge "Win $($t.Win) only" '#6A1B9A' ''))}
   [void]$top.Children.Add((Badge $(if(Undoable $t){'Undoable'}else{'No undo'}) $(if(Undoable $t){'#455A64'}else{'#8D6E63'}) ''))
@@ -1143,11 +1198,15 @@ function Refresh-View{$q=$txt.Text.Trim();$i=$nav.SelectedIndex
  for($k=0;$k -lt $secs.Count;$k++){$n=0
   foreach($r in $rowsBy[$k]){$m=(-not $q) -or (([string]$r.Tag).IndexOf($q,[StringComparison]::OrdinalIgnoreCase) -ge 0);$r.Visibility=if($m){'Visible'}else{'Collapsed'};if($m){$n++}}
   $cards[$k].Visibility=if(($i -le 0 -or ($i-1) -eq $k) -and $n -gt 0){'Visible'}else{'Collapsed'}}}
-function Pick($tag){if($script:busy){return};foreach($u in $units){$t=$u.T;$ap=($ust[$u.Key] -eq 'Applied');$u.Box.IsChecked=[bool]((Fits $t) -and ($ap -or ($tag -and (($t.Prof -split ',') -contains $tag))))};Sync-Masters;Update-Bar}
+function Pick($tag){if($script:busy){return};$n=0   # presets only ADD: switches that are already applied stay on
+ foreach($u in $units){$t=$u.T;$ap=($ust[$u.Key] -eq 'Applied')
+  $want=if($tag -eq 'recommended'){Is-Rec $u}else{$tag -and (($t.Prof -split ',') -contains $tag)}
+  $u.Box.IsChecked=[bool]((Fits $t) -and ($ap -or $want));if((Fits $t) -and $want -and -not $ap){$n++}}
+ Sync-Masters;Update-Bar;if($tag){Log "Preset '$tag': $n switch(es) turned on. Review them (blue bar), then press Apply."}}
 $cfg=Join-Path $(if($UserDesktop -and (Test-Path -LiteralPath $UserDesktop)){$UserDesktop}else{$UserProfile}) 'DebloatHub-selection.json'
 $nav.Add_SelectionChanged({Refresh-View});$txt.Add_TextChanged({Refresh-View});$nav.SelectedIndex=0
 $bScan.Add_Click({Scan})
-$pSafe.Add_Click({Pick 'safe'});$pPriv.Add_Click({Pick 'privacy'});$pGame.Add_Click({Pick 'gaming'});$pNone.Add_Click({Pick $null})
+$pSafe.Add_Click({Pick 'recommended'});$pPriv.Add_Click({Pick 'privacy'});$pGame.Add_Click({Pick 'gaming'});$pNone.Add_Click({Pick $null})
 $bApply.Add_Click({Run})
 $chkPC.Add_Click({$on=[bool]$chkPC.IsChecked;foreach($x in $pcBlocks){$x.Visibility=$(if($on){'Visible'}else{'Collapsed'})}
  try{if(-not(Test-Path 'HKCU:\SOFTWARE\DebloatHub')){New-Item 'HKCU:\SOFTWARE\DebloatHub' -Force|Out-Null};New-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name ShowProsCons -Value ([int]$on) -PropertyType DWord -Force|Out-Null}catch{}})

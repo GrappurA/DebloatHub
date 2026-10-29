@@ -2,6 +2,24 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-10-29
+
+### Added
+- **Manual mode for Background Services (default).** Switched-on services are set to *Manual* instead of *Disabled*: they no longer start at boot, but Windows still starts them when an app or feature asks, so nothing crashes or silently breaks.
+  - Services that already don't start at boot on your PC are not listed, and each group says which ones were left out.
+  - **Strict mode** (a switch in the section) brings back *Disabled* for "never, even if asked".
+- **Third-party updaters & helpers: start on demand.** Google/Chrome, Brave, Adobe, Dropbox updaters and HP, Dell, AMD, Killer telemetry helpers are set to Manual. Only installed services are shown, and the apps still update through their own tasks.
+- **Recommended preset rebuilt** as an explicit, curated list with a *Recommended* badge on each included tweak.
+  - It covers performance and privacy wins that keep common features working and are fully undoable: no app removals, no cleanups, and the Visual Effects *Recommended* set.
+  - The log says how many switches the preset turned on.
+
+### Changed
+- "Disable Connected Devices Platform (breaks Night light)" always uses Disabled in both modes, so its warning stays accurate.
+
+### Fixed
+- Undo records for services are shared between Disabled and Manual, so switching mode never loses the original start type. Records from v1.0.x are still read.
+- Re-applying a tweak can no longer overwrite its recorded original with an already-changed state.
+
 ## [1.0.2] - 2026-10-28
 
 ### Changed

@@ -45,7 +45,8 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 - **Real undo.** Before the first change, DebloatHub saves the *original* value, start type, task state or feature state. Switching it off later restores exactly that, not a guessed "default".
 - **Verified apply.** After each change the real system is checked again. Anything that did not take effect is reported as failed, not as done.
 - **Safety net.** Optional restore point before applying, a Dry run mode that only previews, and a confirmation that lists one-time actions and risky items.
-- **Presets.** *Recommended*, *Privacy* and *Gaming* only move switches; nothing happens until you press Apply. *Reset* returns every switch to the current system state.
+- **Recommended preset.** A curated list of performance and privacy tweaks, marked with a *Recommended* badge. Its rules: every common feature keeps working, and everything can be undone with one click, so it contains no app removals and no one-time cleanups.
+- **Other presets.** *Privacy* and *Gaming* also only move switches; nothing happens until you press Apply. *Reset* returns every switch to the current system state.
 - **Visual Effects presets.** *Maximize looks*, *Recommended* and *Maximize performance* set the switches; after Apply, the effects change instantly, without a sign-out.
 - **Save and load your selection** as a JSON file to reuse on other PCs.
 - **Version aware.** Windows 10-only and Windows 11-only tweaks are shown as "Not available here" on the other version.
@@ -87,7 +88,7 @@ All versions and their changes are listed on the [Releases page](https://github.
 | **Browsers & Dev Tools** | Edge (startup boost, background mode, sidebar, shopping, telemetry, hardening), Chrome, Firefox, VS Code `settings.json` (edited in place, comments kept), Visual Studio, telemetry opt-outs for 14 developer CLIs |
 | **Start, Taskbar & Explorer** | Start/lock-screen ads and silent installs, Widgets, News and Interests, taskbar alignment and buttons, search box, search highlights, End Task, file extensions, hidden files, Explorer defaults |
 | **Performance & Gaming** | Fast Startup, hibernation, Ultimate Performance plan, Game DVR, Game Bar, mouse acceleration, background apps, Xbox cloud-save task, NVIDIA services while the dGPU is off (G-Helper Eco) |
-| **Background Services** | Per-service switches grouped by feature: printing & scanning, Xbox, Phone Link, Windows Hello biometrics, Bluetooth, network sharing, Remote Desktop, IP Helper, diagnostics, ASUS services, SysMain, Search indexing, start-on-demand services, and fewer `svchost.exe` processes |
+| **Background Services** | **Manual mode** (default): services no longer start at boot, but Windows still starts them when something asks, so nothing breaks. **Strict mode**: Disabled, never starts. Per-service switches grouped by feature, including third-party updaters (Google, Brave, Adobe, Dropbox, HP, Dell, AMD): printing & scanning, Xbox, Phone Link, Windows Hello biometrics, Bluetooth, network sharing, Remote Desktop, IP Helper, diagnostics, ASUS services, SysMain, Search indexing, start-on-demand services, and fewer `svchost.exe` processes |
 | **Memory (RAM)** | Ndu driver (non-paged pool leak), memory compression, empty standby memory |
 | **Visual Effects** | All 17 *Performance Options* effects as separate switches, plus transparency, with three presets |
 | **Startup Programs** | Every Run-key and Startup-folder entry on this PC, disabled the same way as Task Manager > Startup apps |
