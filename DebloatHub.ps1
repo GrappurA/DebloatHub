@@ -622,6 +622,8 @@ $RECOMMENDED=@(
  'Disable Delivery Optimization (P2P uploads)','Disable device metadata downloads','Disable AutoPlay/AutoRun for removable drives','Disable Remote Assistance'
 )+$vfxRec
 function Is-Rec($u){($RECOMMENDED -contains $u.T.Name) -or ($RECOMMENDED -contains $u.Key)}
+# Simple view "Debloat + Gaming" = Recommended + these (all undoable, nothing laptop-unfriendly like Ultimate Performance)
+$SIMPLE_GAMING=@('Disable mouse acceleration','Disable Sticky Keys prompt','Disable Game Bar','Disable Game DVR / background capture','Edge: put background tabs to sleep sooner|SleepingTabsEnabled','Edge: put background tabs to sleep sooner|SleepingTabsTimeout')
 function Is-RecT($t){($RECOMMENDED -contains $t.Name) -or @($RECOMMENDED|Where-Object{$_.StartsWith("$($t.Name)|",[StringComparison]::Ordinal)}).Count}
 
 # ---------- Engine ----------
@@ -784,7 +786,7 @@ function Clean-DriverStore{
  Log ('   Driver Store cleanup: {0} package(s) deleted, about {1:N0} MB freed, {2} kept on purpose, {3} failed.' -f $ok,($bytes/1MB),$keep.Count,$fail.Count)
  if($fail.Count){throw "some packages could not be deleted: $($fail -join ', ')"}}
 
-function Log($m){$log.AppendText("$m`r`n");$log.ScrollToEnd();$w.Dispatcher.Invoke([Action]{},[Windows.Threading.DispatcherPriority]::Background)}
+function Log($m){$log.AppendText("$m`r`n");$log.ScrollToEnd();if($slog){$slog.AppendText("$m`r`n");$slog.ScrollToEnd()};$w.Dispatcher.Invoke([Action]{},[Windows.Threading.DispatcherPriority]::Background)}
 
 function Fits($t){(($t.Win -eq 'Any') -or ($t.Win -eq '11' -and $W11) -or ($t.Win -eq '10' -and -not $W11)) -and -not($OtherUser -and @($t.Acts|Where-Object{$_.K -eq 'Spi'}).Count)}
 function Undoable($t){-not @($t.Acts|Where-Object{$_.K -eq 'App' -or ($_.K -eq 'Cmd' -and -not $_.U)}).Count}
@@ -889,7 +891,7 @@ function Update-Bar{$n=0;$pt=@{}
  $bApply.IsEnabled=($n -gt 0);$bApply.Content=if($n){"Apply $n change$(if($n -ne 1){'s'})"}else{'No changes'}}
 # ---------- Background jobs: the window stays usable while scans and applies run ----------
 $script:busy=$false;$script:job=$null;$script:res=$null
-function Show-Load($m){$ld.BeginAnimation([Windows.UIElement]::OpacityProperty,$null);$ld.Opacity=1;$ld.Visibility='Visible';$ldText.Text=$m}
+function Show-Load($m){$ld.BeginAnimation([Windows.UIElement]::OpacityProperty,$null);$ld.Opacity=1;$ld.Visibility='Visible';$ldText.Text=$m;if($sStatus){$sStatus.Text=$m};if($simpleView){Update-Simple}}
 function Hide-Load{$an=New-Object Windows.Media.Animation.DoubleAnimation;$an.From=1;$an.To=0;$an.Duration=[Windows.Duration]::new([TimeSpan]::FromMilliseconds(250));$an.Add_Completed({$ld.Visibility='Collapsed'});$ld.BeginAnimation([Windows.UIElement]::OpacityProperty,$an)}
 $PRE=@'
 $ErrorActionPreference='Stop'
@@ -994,7 +996,7 @@ function Apply-ScanResult($r){
     foreach($vn in $vfxAll){if(($stat[$vn] -eq 'Applied') -ne ($pn[1] -contains $vn)){$ok=$false;break}}
     if($ok){$cur=$pn[0];break}}
    $secCnt[$vk].Text+=" | current: $cur"}
-  Update-Bar
+  Update-Bar;Update-Simple
   $sum.Text="Scan result`n$($c['Applied']) applied | $($c['Partial']) partial | $($c['Not applied']) not applied | $($c['Unknown']) one-time | $($c['N/A']) n/a";Log ($sum.Text -replace "`n",': ')}
 function Show-ApplyResult($r){
  if(-not $r){Log '! the apply job returned no result - the switches now show the real system state';return}
@@ -1002,6 +1004,7 @@ function Show-ApplyResult($r){
  $bad=@($r.Failed)
  if($bad.Count){[void][Windows.MessageBox]::Show("$($bad.Count) item(s) could not be fully applied or reverted:`n`n"+(($bad|ForEach-Object{" - $_"}) -join "`n")+"`n`nThese were NOT reported as done. The switches now show the real system state; see the log for details.",'DebloatHub','OK','Warning')}
  elseif($r.Done -gt 0){Log 'All requested changes were verified on the system. Sign out or reboot for everything to take effect.'}
+ if($r.Done -gt 0){$script:needReboot=$true}
  if($r.RpFailed){Log '! No restore point was created (see the message above).'}}
 function Show-EditionNote{try{$ed=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop).EditionID
  if($ed -notmatch 'Enterprise|Education|Server'){Log "Windows edition: $ed. This edition cannot turn Windows diagnostic data fully off; 'Disable telemetry & diagnostic services' sets the lowest level it allows (Required)."}}catch{}}
@@ -1009,6 +1012,7 @@ function Warn-OtherUser{
  if($UserDetectErr){Log "! Could not identify the signed-in user ($UserDetectErr). Per-user switches use THIS account's profile."}
  if($OtherUser){Log "! DebloatHub runs under a different account than the signed-in user. Per-user switches are read and changed in the signed-in user's profile (SID $UserSid), not in this administrator account. Visual-effect switches are unavailable in this mode because Windows saves them for the account that changes them."}}
 function Scan-Done($r){
+ $script:scanned=$true
  try{
   if(-not $r){Log '! scan returned no result';return}
   if(-not $r.Ok){Log "! background scan failed: $($r.Error)";return}
@@ -1080,6 +1084,12 @@ $xaml=@'
  <Style TargetType="ScrollBar"><Setter Property="Width" Value="10"/><Setter Property="Background" Value="Transparent"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
   <Track x:Name="PART_Track" IsDirectionReversed="True"><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border CornerRadius="4" Background="#5A5A5A" Margin="2,0"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb></Track></ControlTemplate></Setter.Value></Setter></Style>
  <Style TargetType="ToolTip"><Setter Property="Background" Value="#2B2B2B"/><Setter Property="Foreground" Value="#F3F3F3"/><Setter Property="BorderBrush" Value="#4CC2FF"/><Setter Property="Padding" Value="12"/></Style>
+ <Style x:Key="Card" TargetType="Button"><Setter Property="Foreground" Value="#F3F3F3"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Margin" Value="6"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="VerticalContentAlignment" Value="Stretch"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+  <Border x:Name="b" Background="#2B2B2B" CornerRadius="14" BorderBrush="#3A3A3A" BorderThickness="1" Padding="22,18" RenderTransformOrigin="0.5,0.5"><Border.RenderTransform><ScaleTransform/></Border.RenderTransform><ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/></Border>
+  <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#4CC2FF"/><Setter TargetName="b" Property="Background" Value="#313131"/></Trigger>
+   <Trigger Property="IsPressed" Value="True"><Setter TargetName="b" Property="RenderTransform"><Setter.Value><ScaleTransform ScaleX="0.98" ScaleY="0.98"/></Setter.Value></Setter></Trigger>
+   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="b" Property="Opacity" Value="0.45"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+ <LinearGradientBrush x:Key="Brand" StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#4CC2FF" Offset="0"/><GradientStop Color="#B388FF" Offset="1"/></LinearGradientBrush>
 </Window.Resources>
 <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="260"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
  <Border Background="#181818" Padding="16,16,16,12"><DockPanel>
@@ -1092,7 +1102,7 @@ $xaml=@'
    <Border CornerRadius="8" Background="#2B2B2B" BorderBrush="#454545" BorderThickness="1" Width="260" Margin="0,0,16,6"><TextBox x:Name="txt" Background="Transparent" BorderThickness="0" Foreground="#F3F3F3" CaretBrush="#F3F3F3" Padding="10,7"/></Border>
    <Button x:Name="bScan" Content="Detect applied tweaks" Style="{StaticResource Btn}" Background="#4CC2FF" Foreground="#0B0B0B" Margin="0,0,16,6"/>
    <Button x:Name="pSafe" Content="Recommended" Style="{StaticResource Btn}"/><Button x:Name="pPriv" Content="Privacy" Style="{StaticResource Btn}"/>
-   <Button x:Name="pGame" Content="Gaming" Style="{StaticResource Btn}"/><Button x:Name="pNone" Content="Reset" Style="{StaticResource Btn}"/>
+   <Button x:Name="pGame" Content="Gaming" Style="{StaticResource Btn}"/><Button x:Name="pNone" Content="Reset" Style="{StaticResource Btn}"/><Button x:Name="bToSimple" Content="Simple view" Style="{StaticResource Btn}"/>
    <CheckBox x:Name="chkPC" Style="{StaticResource Sw}" Content="Show pros &amp; cons" IsChecked="True" VerticalAlignment="Center" Margin="8,0,0,6"/></WrapPanel>
   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel x:Name="pnl" Margin="0,0,6,0"/></ScrollViewer>
   <Border Grid.Row="2" Background="#2B2B2B" CornerRadius="10" Padding="16,12,16,8" Margin="0,10,0,0"><StackPanel>
@@ -1107,11 +1117,54 @@ $xaml=@'
    <Grid.Triggers><EventTrigger RoutedEvent="FrameworkElement.Loaded"><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="rot" Storyboard.TargetProperty="Angle" From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/></Storyboard></BeginStoryboard></EventTrigger></Grid.Triggers>
    <Path Data="M 9,2 A 7,7 0 1 1 2,9" Stroke="#4CC2FF" StrokeThickness="2.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/></Grid>
    <TextBlock x:Name="ldText" Text="Loading applied tweaks..." VerticalAlignment="Center" FontSize="13"/></StackPanel></Border>
+ <Border x:Name="simpleRoot" Grid.ColumnSpan="2" Background="#1E1E1E" Visibility="Collapsed"><Grid>
+  <StackPanel x:Name="chooser" VerticalAlignment="Center" HorizontalAlignment="Center" Width="780">
+   <TextBlock Text="DebloatHub" FontSize="44" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{StaticResource Brand}"/>
+   <TextBlock Text="How do you want to use it?" FontSize="16" Foreground="#9A9A9A" HorizontalAlignment="Center" Margin="0,6,0,26"/>
+   <UniformGrid Columns="2" Height="190">
+    <Button x:Name="chSimple" Style="{StaticResource Card}"><StackPanel>
+     <TextBlock Text="Simple" FontSize="24" FontWeight="SemiBold"/>
+     <TextBlock Text="A few big buttons. Removes ads, telemetry and background junk in one click. Safe and fully undoable." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/>
+     <TextBlock Text="Best for most people" Foreground="#4CC2FF" FontSize="12" Margin="0,14,0,0"/></StackPanel></Button>
+    <Button x:Name="chAdv" Style="{StaticResource Card}"><StackPanel>
+     <TextBlock Text="Advanced" FontSize="24" FontWeight="SemiBold"/>
+     <TextBlock Text="Every tweak with details, pros and cons. Choose item by item, services, apps, presets." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/>
+     <TextBlock Text="Full control" Foreground="#B388FF" FontSize="12" Margin="0,14,0,0"/></StackPanel></Button>
+   </UniformGrid>
+   <CheckBox x:Name="chRemember" Style="{StaticResource Sw}" Content="Remember my choice" HorizontalAlignment="Center" Margin="0,22,0,0"/>
+  </StackPanel>
+  <Grid x:Name="simpleView" Visibility="Collapsed" MaxWidth="940" Margin="36,26,36,20">
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+   <DockPanel><Button x:Name="bToAdv" DockPanel.Dock="Right" Content="Advanced options" Style="{StaticResource Btn}" VerticalAlignment="Center"/>
+    <TextBlock Text="DebloatHub" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Brand}" VerticalAlignment="Center"/></DockPanel>
+   <TextBlock x:Name="sStatus" Grid.Row="1" FontSize="15" Foreground="#C8C8C8" Margin="2,14,0,16" TextWrapping="Wrap" Text="Checking your PC..."/>
+   <UniformGrid Grid.Row="2" Columns="3" Height="200">
+    <Button x:Name="bRec" Style="{StaticResource Card}"><DockPanel>
+     <TextBlock x:Name="tRec" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
+     <StackPanel><TextBlock Text="Debloat" FontSize="22" FontWeight="SemiBold"/>
+      <TextBlock Text="Turns off ads, telemetry, Widgets and background junk. Everything you use keeps working." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+    <Button x:Name="bGame" Style="{StaticResource Card}"><DockPanel>
+     <TextBlock x:Name="tGame" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
+     <StackPanel><TextBlock Text="Debloat + Gaming" FontSize="22" FontWeight="SemiBold"/>
+      <TextBlock Text="Everything in Debloat, plus raw mouse input and no Game Bar or Sticky Keys pop-ups." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+    <Button x:Name="bUndo" Style="{StaticResource Card}"><DockPanel>
+     <TextBlock x:Name="tUndo" DockPanel.Dock="Bottom" Foreground="#FFB74D" FontSize="13" Margin="0,10,0,0"/>
+     <StackPanel><TextBlock Text="Undo" FontSize="22" FontWeight="SemiBold"/>
+      <TextBlock Text="Puts back everything DebloatHub changed on this PC." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+   </UniformGrid>
+   <WrapPanel Grid.Row="3" Margin="8,14,0,10">
+    <CheckBox x:Name="sRP" Style="{StaticResource Sw}" Content="Create a restore point first" IsChecked="True" Margin="0,0,24,6"/>
+    <TextBlock x:Name="lnkShow" Text="Show me exactly what changes" Foreground="#4CC2FF" Cursor="Hand" VerticalAlignment="Center" Margin="0,0,24,6" TextDecorations="Underline"/>
+    <Button x:Name="bReboot" Content="Restart now to finish" Style="{StaticResource Btn}" Background="#4CC2FF" Foreground="#0B0B0B" FontWeight="SemiBold" Visibility="Collapsed"/>
+   </WrapPanel>
+   <Border Grid.Row="4" CornerRadius="10" Background="#151515"><TextBox x:Name="slog" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Background="Transparent" Foreground="#A8A8A8" BorderThickness="0" Padding="12"/></Border>
+  </Grid>
+ </Grid></Border>
 </Grid></Window>
 '@
 $w=[Windows.Markup.XamlReader]::Parse($xaml)
 $w.Title="DebloatHub v$AppVersion"
-'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
+'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bGame','bUndo','tRec','tGame','tUndo','sRP','lnkShow','bReboot','slog'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
 $pSafe.ToolTip='Recommended: performance and privacy tweaks that keep every common feature working and can all be undone with one click (no app removals, no cleanups). Tweaks in this preset carry a "Recommended" badge.'
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
 $bc=New-Object Windows.Media.BrushConverter
@@ -1235,13 +1288,56 @@ Add-Type -Namespace DH -Name Win -MemberDefinition @'
 $timer=New-Object Windows.Threading.DispatcherTimer;$timer.Interval=[TimeSpan]::FromMilliseconds(120)
 $timer.Add_Tick({$j=$script:job;if(-not $j){return}
  $m=$null;while($j.Sync.Q.TryDequeue([ref]$m)){Log $m}
- if($j.Sync.Msg){$ldText.Text=$j.Sync.Msg}
+ if($j.Sync.Msg){$ldText.Text=$j.Sync.Msg;if($sStatus -and $simpleView.Visibility -eq 'Visible'){$sStatus.Text=$j.Sync.Msg}}
  if($j.H.IsCompleted){$timer.Stop()
   try{[void]$j.PS.EndInvoke($j.H)}catch{Log "! $($_.Exception.Message)"}
   foreach($er in @($j.PS.Streams.Error)){Log "! $($er.ToString())"}
   while($j.Sync.Q.TryDequeue([ref]$m)){Log $m}
   $script:res=$j.Sync.Result;$j.PS.Dispose();$j.RS.Dispose();$script:job=$null;$script:busy=$false;$bScan.IsEnabled=$true;Hide-Load
   & $j.Done $script:res}})
+# ---------- Simple view: three buttons on top of the same engine (presets -> switches -> Run) ----------
+$script:needReboot=$false;$script:scanned=$false
+function In-Set($u,$what){(Fits $u.T) -and $u.Box.IsEnabled -and $(if($what -eq 'game'){(Is-Rec $u) -or ($SIMPLE_GAMING -contains $u.T.Name) -or ($SIMPLE_GAMING -contains $u.Key)}else{Is-Rec $u})}
+function DH-Changed($u){                          # did DebloatHub itself change this switch? (a recorded original or a command marker exists)
+ foreach($a in $u.Acts){if(-not(Act-Revertible $a)){continue}
+  if($a.K -eq 'Cmd'){$id=Cmd-Id $a;if((Get-ItemProperty 'HKLM:\SOFTWARE\DebloatHub\Applied' -Name $id -ErrorAction SilentlyContinue).$id){return $true}}
+  elseif(Snap-Read $a){return $true}}
+ return $false}
+function Undo-Units{@($units|Where-Object{$_.Box.IsEnabled -and $ust[$_.Key] -eq 'Applied' -and (Can-Undo $_) -and (DH-Changed $_)})}
+function Update-Simple{
+ if(-not $simpleView -or $simpleView.Visibility -ne 'Visible'){return}
+ if($script:busy -or -not $script:scanned){$bRec.IsEnabled=$false;$bGame.IsEnabled=$false;$bUndo.IsEnabled=$false;return}
+ $rn=@($units|Where-Object{(In-Set $_ 'rec') -and $ust[$_.Key] -ne 'Applied'}).Count
+ $gn=@($units|Where-Object{(In-Set $_ 'game') -and $ust[$_.Key] -ne 'Applied'}).Count
+ $un=@(Undo-Units).Count
+ $tRec.Text=$(if($rn){"$rn change$(if($rn -ne 1){'s'}) to make"}else{'Done on this PC'});$bRec.IsEnabled=($rn -gt 0)
+ $tGame.Text=$(if($gn){"$gn change$(if($gn -ne 1){'s'}) to make"}else{'Done on this PC'});$bGame.IsEnabled=($gn -gt 0)
+ $tUndo.Text=$(if($un){"$un change$(if($un -ne 1){'s'}) to undo"}else{'Nothing to undo'});$bUndo.IsEnabled=($un -gt 0)
+ $sStatus.Text=$(if($script:needReboot){'Done. Restart your PC to finish.'}elseif(-not $rn){'Your PC is debloated. You can still undo it at any time.'}else{"Ready. Pick what you want; nothing changes until you confirm."})
+ $bReboot.Visibility=$(if($script:needReboot){'Visible'}else{'Collapsed'})}
+function Simple-Run($what){
+ if($script:busy){return}
+ Pick $null                                       # every switch = current state of the PC
+ if($what -eq 'undo'){foreach($u in (Undo-Units)){$u.Box.IsChecked=$false}}
+ else{foreach($u in $units){if(In-Set $u $what){$u.Box.IsChecked=$true}}}
+ Sync-Masters;Update-Bar
+ $chkDry.IsChecked=$false;$chkRP.IsChecked=[bool]$sRP.IsChecked
+ Run}
+function Show-View($v){
+ switch($v){
+  'choose'  {$simpleRoot.Visibility='Visible';$chooser.Visibility='Visible';$simpleView.Visibility='Collapsed'}
+  'simple'  {$simpleRoot.Visibility='Visible';$chooser.Visibility='Collapsed';$simpleView.Visibility='Visible';Update-Simple}
+  'advanced'{$simpleRoot.Visibility='Collapsed'}}}
+function Save-UiMode($v){try{if(-not(Test-Path 'HKCU:\SOFTWARE\DebloatHub')){New-Item 'HKCU:\SOFTWARE\DebloatHub' -Force|Out-Null};New-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name UiMode -Value $v -PropertyType String -Force|Out-Null}catch{}}
+$chSimple.Add_Click({if($chRemember.IsChecked){Save-UiMode 'Simple'};Show-View 'simple'})
+$chAdv.Add_Click({if($chRemember.IsChecked){Save-UiMode 'Advanced'};Show-View 'advanced'})
+$bToAdv.Add_Click({Save-UiMode 'Advanced';Show-View 'advanced'})
+$bToSimple.Add_Click({Save-UiMode 'Simple';Show-View 'simple'})
+$bRec.Add_Click({Simple-Run 'rec'});$bGame.Add_Click({Simple-Run 'game'});$bUndo.Add_Click({Simple-Run 'undo'})
+$lnkShow.Add_MouseLeftButtonUp({if($script:busy){return};Pick 'recommended';Show-View 'advanced';$nav.SelectedIndex=0})   # the blue bars show every pending change
+$bReboot.Add_Click({if([Windows.MessageBox]::Show('Restart the PC now? Save your work in other apps first.','DebloatHub','YesNo','Question') -eq 'Yes'){Start-Process shutdown.exe -ArgumentList '/r /t 5'}})
+$startView='choose';try{$um=(Get-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name UiMode -ErrorAction Stop).UiMode;if($um -eq 'Simple'){$startView='simple'}elseif($um -eq 'Advanced'){$startView='advanced'}}catch{}
+Show-View $startView
 $w.Add_Closing({param($s,$e) if($script:busy -and [Windows.MessageBox]::Show('A job is still running. Close anyway?','DebloatHub','YesNo') -ne 'Yes'){$e.Cancel=$true}})
 $w.Add_ContentRendered({if(-not $ShowConsole){try{[void][DH.Win]::ShowWindow([DH.Win]::GetConsoleWindow(),0)}catch{}};Warn-OtherUser;Show-EditionNote;Scan})
 [void]$w.ShowDialog()

@@ -5,6 +5,12 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
 ## [1.1.0] - 2026-10-29
 
 ### Added
+- **Simple view (new start page).** On first start you choose **Simple** or **Advanced**, and can tick *Remember my choice*.
+  - Simple shows three big buttons: **Debloat** (the Recommended preset), **Debloat + Gaming** (adds raw mouse input, no Game Bar or Sticky Keys pop-ups, faster sleeping tabs in Edge) and **Undo**.
+  - **Undo** puts back only what DebloatHub itself changed: settings that have a recorded original or a command marker.
+  - Each button shows how many changes it would make. *Show me exactly what changes* opens Advanced with the switches pre-set.
+  - Restore point on by default; a "Restart now" button appears after applying.
+  - You can switch between the views at any time ("Advanced options" / "Simple view").
 - **Manual mode for Background Services (default).** Switched-on services are set to *Manual* instead of *Disabled*: they no longer start at boot, but Windows still starts them when an app or feature asks, so nothing crashes or silently breaks.
   - Services that already don't start at boot on your PC are not listed, and each group says which ones were left out.
   - **Strict mode** (a switch in the section) brings back *Disabled* for "never, even if asked".

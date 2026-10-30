@@ -38,6 +38,7 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 
 ## Features
 
+- **Simple or Advanced.** Simple is three buttons: *Debloat*, *Debloat + Gaming* and *Undo*, each showing how many changes it makes. Advanced is the full list below with every switch, detail and preset. Switch any time.
 - **120+ tweaks in 11 sections**, plus your own startup programs, which are read from this PC.
 - **Switches show the real state.** On start, DebloatHub scans the PC and every switch shows what is ON right now: *Applied*, *Partial*, *Not applied* or *Not available here*.
 - **Choose item by item.** Groups (apps, services, scheduled tasks, Windows features, browser policies) open into one switch per item. You keep the Print Spooler and turn off Fax, or remove Solitaire but keep Calculator.
