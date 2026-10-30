@@ -9,11 +9,17 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
   - Services that already don't start at boot on your PC are not listed, and each group says which ones were left out.
   - **Strict mode** (a switch in the section) brings back *Disabled* for "never, even if asked".
 - **Third-party updaters & helpers: start on demand.** Google/Chrome, Brave, Adobe, Dropbox updaters and HP, Dell, AMD, Killer telemetry helpers are set to Manual. Only installed services are shown, and the apps still update through their own tasks.
+- **New browser tweaks** (sources: Microsoft Edge policy docs, Mozilla's official ADMX templates):
+  - *Edge: no Microsoft Rewards or MSN news feed*: useful even if you never open Edge, because its new tab page and Rewards no longer phone home.
+  - *Edge: put background tabs to sleep sooner*: sleeping tabs after 5 minutes, optional efficiency mode.
+  - *Firefox: no sponsored shortcuts, stories, suggestions or feature ads*.
+  - *Firefox: update only while Firefox is open*: no background update task while it's closed.
 - **Recommended preset rebuilt** as an explicit, curated list with a *Recommended* badge on each included tweak.
   - It covers performance and privacy wins that keep common features working and are fully undoable: no app removals, no cleanups, and the Visual Effects *Recommended* set.
   - The log says how many switches the preset turned on.
 
 ### Changed
+- **Browser and IDE tweaks only appear when that program is installed** (Edge, Chrome, Firefox, Visual Studio, VS Code). They also appear when their policy key already exists, so settings applied earlier can still be reverted. Before, Chrome/Firefox policies were offered and applied even without the browser, which later made a newly installed browser say "managed by your organization".
 - "Disable Connected Devices Platform (breaks Night light)" always uses Disabled in both modes, so its warning stays accurate.
 
 ### Fixed
