@@ -11,6 +11,16 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
   - Each button shows how many changes it would make. *Show me exactly what changes* opens Advanced with the switches pre-set.
   - Restore point on by default; a "Restart now" button appears after applying.
   - You can switch between the views at any time ("Advanced options" / "Simple view").
+- **System check (read-only)** at the top of *Performance & Gaming*, refreshed on every scan. It covers what matters more than most tweaks but can't be changed from Windows:
+  - **GPU driver:** missing, or older than 6 months.
+  - **Display:** running at 60 Hz when the screen reports more.
+  - **RAM:** running at the default JEDEC speed (enable XMP/EXPO), below the module rating, under 8 GB, or a single module (single channel).
+  - **Memory Integrity and GPU scheduling** status.
+  - The Simple view lists the tips under its status line.
+- **Gaming switches:** *Make sure Game Mode is on*, *Optimizations for windowed games* (Windows 11; other settings in the same registry value are kept), *Turn on hardware-accelerated GPU scheduling*, and *Turn off Memory Integrity (Core isolation)* (Advanced, with a warning in the confirmation).
+- **Remove Windows 11 extra apps:** Outlook (new), Mail and Calendar (old), Dev Home, To Do, Family, Quick Assist, Bing Search, Journal, Phone Link. Each one is its own switch.
+- **Xbox apps:** now include the current Xbox app (`Microsoft.GamingApp`).
+- **Debloat + Gaming** (Simple view) now also turns on Game Mode and windowed-game optimizations.
 - **Manual mode for Background Services (default).** Switched-on services are set to *Manual* instead of *Disabled*: they no longer start at boot, but Windows still starts them when an app or feature asks, so nothing crashes or silently breaks.
   - Services that already don't start at boot on your PC are not listed, and each group says which ones were left out.
   - **Strict mode** (a switch in the section) brings back *Disabled* for "never, even if asked".

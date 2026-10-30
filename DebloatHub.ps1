@@ -69,7 +69,7 @@ fTw $s6 'Disable Copilot' 'Turns off the Copilot sidebar by policy. This only af
 
 fTw $s2 'Remove Microsoft consumer apps' 'Uninstalls News, Weather, Get Help, Tips, Office hub ("Microsoft 365"), Solitaire, Feedback Hub and Clipchamp. Each app can be picked individually.' Safe 'Win11Debloat, W10Debloater, Sophia' Any 'safe' @('Microsoft.BingNews','Microsoft.BingWeather','Microsoft.GetHelp','Microsoft.Getstarted','Microsoft.MicrosoftOfficeHub','Microsoft.MicrosoftSolitaireCollection','Microsoft.WindowsFeedbackHub','Clipchamp.Clipchamp'|ForEach-Object{fApp $_})
 fTw $s8 'Remove third-party promo apps' 'Uninstalls pre-installed promotional apps and stubs: Candy Crush, Spotify, TikTok, Disney+, Instagram, Facebook, LinkedIn.' Safe 'Win11Debloat, W10Debloater, W4RH4WK' Any 'safe' @('*CandyCrush*','*Spotify*','*TikTok*','*Disney*','*Instagram*','*Facebook*','*LinkedIn*'|ForEach-Object{fApp $_})
-fTw $s7 'Remove Xbox apps' 'Uninstalls the Xbox app, Game Bar (Win+G), Xbox overlays and Xbox identity/speech components. Each package can be picked individually.' Moderate 'WinUtil, Win11Debloat' Any '' @('Microsoft.XboxApp','Microsoft.XboxGamingOverlay','Microsoft.XboxGameOverlay','Microsoft.Xbox.TCUI','Microsoft.XboxSpeechToTextOverlay'|ForEach-Object{fApp $_}) 'Do not run if you use Xbox Game Pass, PC cloud saves, or Win+G Game Bar.'
+fTw $s7 'Remove Xbox apps' 'Uninstalls the Xbox app, Game Bar (Win+G), Xbox overlays and Xbox identity/speech components. Each package can be picked individually.' Moderate 'WinUtil, Win11Debloat' Any '' @('Microsoft.GamingApp','Microsoft.XboxApp','Microsoft.XboxGamingOverlay','Microsoft.XboxGameOverlay','Microsoft.Xbox.TCUI','Microsoft.XboxSpeechToTextOverlay'|ForEach-Object{fApp $_}) 'Do not run if you use Xbox Game Pass, PC cloud saves, or Win+G Game Bar.'
 fTw $s9 'Remove 3D / Mixed Reality apps' 'Uninstalls 3D Builder, 3D Viewer, Print 3D and the Mixed Reality Portal.' Safe 'W10Debloater, W4RH4WK' Any 'safe' @('Microsoft.3DBuilder','Microsoft.Microsoft3DViewer','Microsoft.Print3D','Microsoft.MixedReality.Portal'|ForEach-Object{fApp $_})
 
 fTw $s3 'Disable Start/Settings suggestions & silent app installs' 'Stops Windows promoting apps in Start, Settings and the Start menu, and stops it installing "suggested" apps (games, Spotify and so on) in the background.' Safe 'WinUtil, Win11Debloat, Sophia, W10Debloater' Any 'safe,privacy' ('SubscribedContent-338388Value','SubscribedContent-338389Value','SubscribedContent-353696Value','SystemPaneSuggestionsEnabled','SilentInstalledAppsEnabled','PreInstalledAppsEnabled','OemPreInstalledAppsEnabled'|ForEach-Object{fReg $CDM $_ 0 1})
@@ -210,7 +210,7 @@ $more=@{
 # ---------- Round 2: startup, services, features, Edge/background, OEM (written from my own knowledge, NOT from the 7 repos - verify) ----------
 $s15='Startup Programs';$s16='Services (start on demand)';$s17='Optional Windows Features';$s18='Edge & Background Apps';$s19='OEM Utilities'
 $secs=@($secs|Where-Object{$_ -ne $s14})+@($s18,$s15,$s16,$s17,$s19,$s14)
-$LBL=@{'Microsoft.549981C3F5F10'='Cortana';'*DellInc*'='Dell apps';'*AD2F1837*'='HP apps (Support Assistant, Smart...)';'*Lenovo*'='Lenovo apps (Vantage...)';'*AcerIncorporated*'='Acer apps';'*ASUS*'='ASUS apps (Armoury Crate...)';'*McAfee*'='McAfee trial';'*Norton*'='Norton trial'
+$LBL=@{'Microsoft.549981C3F5F10'='Cortana';'Microsoft.GamingApp'='Xbox app';'Microsoft.XboxApp'='Xbox Console Companion (old)';'Microsoft.OutlookForWindows'='Outlook (new)';'microsoft.windowscommunicationsapps'='Mail and Calendar (old)';'Microsoft.Windows.DevHome'='Dev Home';'Microsoft.Todos'='Microsoft To Do';'MicrosoftCorporationII.MicrosoftFamily'='Microsoft Family';'MicrosoftCorporationII.QuickAssist'='Quick Assist';'Microsoft.BingSearch'='Bing Search';'Microsoft.MicrosoftJournal'='Journal';'Microsoft.YourPhone'='Phone Link';'MicrosoftWindows.CrossDevice'='Phone Link helper (Cross Device)';'*DellInc*'='Dell apps';'*AD2F1837*'='HP apps (Support Assistant, Smart...)';'*Lenovo*'='Lenovo apps (Vantage...)';'*AcerIncorporated*'='Acer apps';'*ASUS*'='ASUS apps (Armoury Crate...)';'*McAfee*'='McAfee trial';'*Norton*'='Norton trial'
  MapsBroker='Downloaded Maps Manager';TrkWks='Distributed Link Tracking';PcaSvc='Program Compatibility Assistant';edgeupdate='Edge Update'
  MicrosoftWindowsPowerShellV2Root='PowerShell 2.0';SMB1Protocol='SMB 1.0 file sharing';'Printing-XPSServices-Features'='XPS Services';'Internet-Explorer-Optional-amd64'='Internet Explorer mode';'WorkFolders-Client'='Work Folders';FaxServicesClientPackage='Windows Fax and Scan';TelnetClient='Telnet client';'01'='Storage Sense on';'04'='Delete temporary files';'08'='Clean up Recycle Bin';'256'='Recycle Bin: delete after 30 days';'2048'='Run every week'}
 $sd='DebloatHub'
@@ -583,6 +583,23 @@ SvcGroup -Fixed 'Third-party updaters & helpers: start on demand' 'Sets backgrou
 $db+=fTw $sSvc 'Group services into fewer svchost processes' 'Raises SvcHostSplitThresholdInKB above any RAM size, so Windows groups related services into shared svchost.exe processes again, as it did before Windows 10 1703 (or on PCs with under 3.5 GB RAM). Reboot needed.' Moderate $sd Any '' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control' SvcHostSplitThresholdInKB 0x7FFFFFFF 3670016) 'Mostly cosmetic: it lowers the process count, not CPU use. Undo restores the original value (default 3.5 GB).'
 $more['Group services into fewer svchost processes']=@('Use it if the long list of "Service Host" processes bothers you or you want a lower process count. It does not make games or apps faster.','Often dozens fewer svchost.exe processes and a little less RAM overhead.','Less isolation: if one service crashes, the others in the same process restart with it; Task Manager can no longer show which single service in a group uses CPU. Some services always keep their own process.')
 
+# ---------- Gaming: Windows' own gaming switches + Memory Integrity ----------
+$dxK=Map-Hive 'HKCU:\Software\Microsoft\DirectX\UserGpuPreferences'
+$db+=fTw 'Performance & Gaming' 'Make sure Game Mode is on' 'Turns on Windows Game Mode (Settings > Gaming > Game Mode). It is on by default; this switch puts it back if something turned it off. Game Mode gives the game priority and pauses Windows Update installs and driver installs while you play.' Safe $sd Any 'gaming' @(fReg 'HKCU:\Software\Microsoft\GameBar' AutoGameModeEnabled 1 $null) 'Keep it on; there is no downside on modern Windows.'
+$more['Make sure Game Mode is on']=@('Everyone who plays games; it only acts while a game runs.','Fewer background interruptions (updates, driver installs) during games; slightly steadier frame times.','Practically none on current Windows versions.')
+$db+=fTw 'Performance & Gaming' 'Optimizations for windowed games (Windows 11)' 'Turns on Settings > System > Display > Graphics > "Optimizations for windowed games": older DirectX 10/11 games in windowed or borderless mode use the modern flip presentation model, which lowers input latency and enables Auto HDR and variable refresh rate there. Other graphics settings stored in the same value are kept.' Safe $sd 11 'gaming' @(fCmd ("Set-DxFlag '"+$dxK+"' SwapEffectUpgradeEnable 1") ("Set-DxFlag '"+$dxK+"' SwapEffectUpgradeEnable `$null") ("Test-DxFlag '"+$dxK+"' SwapEffectUpgradeEnable 1")) 'Recommended for gamers on Windows 11 (Microsoft''s own setting). Restart the game afterwards.'
+$more['Optimizations for windowed games (Windows 11)']=@('Use it if you play older DirectX 10/11 games in windowed or borderless mode.','Lower latency in windowed and borderless games; Auto HDR and variable refresh rate work there too.','A few very old games may show glitches; turn it off again if one does. DirectX 12 and fullscreen games are not affected.')
+$db+=fTw 'Performance & Gaming' 'Turn on hardware-accelerated GPU scheduling' 'Lets the GPU manage its own video memory scheduling (Settings > System > Display > Graphics > Default graphics settings). Required for DLSS Frame Generation on NVIDIA RTX 40/50 cards. Needs a supported GPU and driver (WDDM 2.7+); restart needed.' Safe $sd Any 'gaming' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' HwSchMode 2 $null) 'Turn it on if you use DLSS Frame Generation; otherwise test both, because the effect differs per PC and game (usually within a few percent either way).'
+$more['Turn on hardware-accelerated GPU scheduling']=@('Needed for DLSS 3/4 Frame Generation. Otherwise optional: measure your games with it on and off.','Slightly lower CPU overhead and latency on many systems; required by Frame Generation.','On some systems and older games it causes stutter or lower FPS; it does nothing on GPUs or drivers without support. Restart needed.')
+$db+=fTw 'Performance & Gaming' 'Turn off Memory Integrity (Core isolation)' 'Turns off Memory Integrity (Windows Security > Device security > Core isolation), the virtualization-based protection that stops malicious or vulnerable drivers from loading into the kernel. Some games gain a few percent FPS, mostly on older CPUs. Restart needed. If it is enforced by your organization or locked in UEFI, Windows turns it back on.' Advanced $sd Any 'gaming' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' Enabled 0 1) 'Only for gaming PCs where you control what you install. Leave it on for work PCs, laptops you travel with, and anyone who installs software from many sources.'
+$more['Turn off Memory Integrity (Core isolation)']=@('Only if you want the last few percent of FPS and accept weaker protection against malicious drivers. Check the System check above: it shows whether it is running at all.','Typically 0-10% more FPS in some games, more on older CPUs without fast virtualization support; slightly lower latency.','Kernel-level malware and vulnerable drivers become easier to abuse. Windows Security shows a warning. Some work or school PCs and a few anti-cheat or security tools require it. Restart needed.')
+if(-not $warnBy){$warnBy=@{}}
+$warnBy['Turn off Memory Integrity (Core isolation)']='this lowers protection against malicious drivers. Windows Security will show a warning, and some work PCs or anti-cheat tools require Memory Integrity. Restart needed.'
+
+# ---------- Windows 11 extra apps (each package is its own switch) ----------
+$db+=fTw $s2 'Remove Windows 11 extra apps' 'Uninstalls newer Windows 11 extras: Outlook (new), Mail and Calendar (old), Dev Home, Microsoft To Do, Microsoft Family, Quick Assist, Bing Search, Journal and Phone Link with its helper. Each app is its own switch.' Moderate $sd Any '' @('Microsoft.OutlookForWindows','microsoft.windowscommunicationsapps','Microsoft.Windows.DevHome','Microsoft.Todos','MicrosoftCorporationII.MicrosoftFamily','MicrosoftCorporationII.QuickAssist','Microsoft.BingSearch','Microsoft.MicrosoftJournal','Microsoft.YourPhone','MicrosoftWindows.CrossDevice'|ForEach-Object{fApp $_}) 'Pick only what you never use. Keep Quick Assist if someone helps you remotely, Phone Link if you connect your phone, and Outlook (new) if you read email in it.'
+$more['Remove Windows 11 extra apps']=@('Remove the ones you do not use; keep Quick Assist, Phone Link or Outlook if you rely on them.','Less clutter in Start; fewer apps updating and starting background tasks.','Removed apps must be reinstalled from the Microsoft Store (Quick Assist and Phone Link too). Apps not present on your Windows version are skipped.')
+
 # ---------- Memory (RAM) ----------
 $sMem='Memory (RAM)'
 $db+=fTw $sMem 'Disable Network Data Usage monitor (Ndu driver)' 'Disables the Ndu kernel driver (Services\Ndu, Start = 4), which counts network traffic per app for Settings > Data usage. Reboot needed. The key is only changed if it exists.' Moderate $sd 10 '' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Services\Ndu' Start 4 2 DWord $true) 'Use it if Task Manager shows non-paged pool memory growing for days. Undo restores the original start type (2 = automatic).'
@@ -623,7 +640,7 @@ $RECOMMENDED=@(
 )+$vfxRec
 function Is-Rec($u){($RECOMMENDED -contains $u.T.Name) -or ($RECOMMENDED -contains $u.Key)}
 # Simple view "Debloat + Gaming" = Recommended + these (all undoable, nothing laptop-unfriendly like Ultimate Performance)
-$SIMPLE_GAMING=@('Disable mouse acceleration','Disable Sticky Keys prompt','Disable Game Bar','Disable Game DVR / background capture','Edge: put background tabs to sleep sooner|SleepingTabsEnabled','Edge: put background tabs to sleep sooner|SleepingTabsTimeout')
+$SIMPLE_GAMING=@('Make sure Game Mode is on','Optimizations for windowed games (Windows 11)','Disable mouse acceleration','Disable Sticky Keys prompt','Disable Game Bar','Disable Game DVR / background capture','Edge: put background tabs to sleep sooner|SleepingTabsEnabled','Edge: put background tabs to sleep sooner|SleepingTabsTimeout')
 function Is-RecT($t){($RECOMMENDED -contains $t.Name) -or @($RECOMMENDED|Where-Object{$_.StartsWith("$($t.Name)|",[StringComparison]::Ordinal)}).Count}
 
 # ---------- Engine ----------
@@ -756,6 +773,56 @@ function Remove-NvEcoTask{
  $global:LASTEXITCODE=0}
 function Test-NvEcoTask{[bool](Get-ScheduledTask -TaskPath '\DebloatHub\' -TaskName 'Stop NVIDIA services while dGPU is off' -ErrorAction SilentlyContinue)}
 
+# ---------- DirectX per-user flags ("SwapEffectUpgradeEnable=1;VRROptimizeEnable=0;") ----------
+# Several Settings toggles share ONE string, so change only our flag and keep the others exactly as they are.
+function Set-DxFlag($k,$name,$val){              # $val = $null removes the flag (= Windows default)
+ $cur=(Get-ItemProperty -LiteralPath $k -Name DirectXUserGlobalSettings -ErrorAction SilentlyContinue).DirectXUserGlobalSettings
+ $parts=[ordered]@{};foreach($x in ("$cur" -split ';')){if($x -match '^\s*([^=]+?)\s*=(.*)$'){$parts[$Matches[1]]=$Matches[2]}}
+ if($null -eq $val){$parts.Remove($name)}else{$parts[$name]="$val"}
+ $new=(@($parts.Keys|ForEach-Object{"$_=$($parts[$_])"}) -join ';');if($new){$new+=';'}
+ if(-not(Test-Path -LiteralPath $k)){New-Item -Path $k -Force|Out-Null}
+ if($new){New-ItemProperty -LiteralPath $k -Name DirectXUserGlobalSettings -Value $new -PropertyType String -Force|Out-Null}
+ else{Remove-ItemProperty -LiteralPath $k -Name DirectXUserGlobalSettings -ErrorAction SilentlyContinue}
+ $global:LASTEXITCODE=0}
+function Test-DxFlag($k,$name,$val){$cur=(Get-ItemProperty -LiteralPath $k -Name DirectXUserGlobalSettings -ErrorAction SilentlyContinue).DirectXUserGlobalSettings
+ [bool]("$cur" -match "(^|;)\s*$([regex]::Escape($name))\s*=\s*$([regex]::Escape("$val"))\s*(;|$)")}
+
+# ---------- System check (read-only): things DebloatHub cannot change but that matter more than most tweaks ----------
+# Runs inside the scan job; returns plain hashtables @{L=label; S='ok'|'tip'|'info'; T=text}.
+function Get-SysCheck{
+ $out=@()
+ $laptop=$false;try{$laptop=[bool](@((Get-CimInstance Win32_SystemEnclosure -ErrorAction Stop).ChassisTypes)|Where-Object{$_ -in 8,9,10,11,12,14,18,21,30,31,32})}catch{}
+ try{foreach($v in @(Get-CimInstance Win32_VideoController -ErrorAction Stop)){
+   $n=[string]$v.Name
+   if($n -match 'Basic Display|Basic Render'){$out+=@{L='GPU';S='tip';T="${n}: no graphics driver is installed. Install it from the GPU or laptop maker (NVIDIA, AMD, Intel, ASUS...)."};continue}
+   $d=$v.DriverDate;$age=$(if($d){[int]((Get-Date)-[datetime]$d).TotalDays}else{-1})
+   $t="$n - driver $($v.DriverVersion)$(if($d){' from '+([datetime]$d).ToString('yyyy-MM-dd')})"
+   if($age -gt 180 -and $n -match 'NVIDIA|AMD|Radeon|Intel|Arc'){$out+=@{L='GPU';S='tip';T="$t. Over 6 months old: newer drivers often fix stutter and add game-specific fixes. Get it from NVIDIA / AMD / Intel (on laptops also the laptop maker's site)."}}
+   else{$out+=@{L='GPU';S='ok';T=$t}}
+   $cur=[int]$v.CurrentRefreshRate;$max=[int]$v.MaxRefreshRate
+   if($cur -gt 0 -and $v.CurrentHorizontalResolution){
+    if($max -gt $cur+5 -and $cur -le 75){$out+=@{L='Display';S='tip';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz, while up to $max Hz is reported. If your screen supports more: Settings > System > Display > Advanced display > Choose a refresh rate. This is one of the most noticeable upgrades for games."}}
+    else{$out+=@{L='Display';S='info';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz"}}}}}catch{}
+ try{$m=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction Stop)
+  if($m.Count){
+   $gb=[math]::Round((($m|Measure-Object Capacity -Sum).Sum)/1GB)
+   $cfg=[int](($m|Where-Object{$_.ConfiguredClockSpeed}|Measure-Object ConfiguredClockSpeed -Minimum).Minimum)
+   $rated=[int](($m|Measure-Object Speed -Maximum).Maximum)
+   $type=switch([int]@($m)[0].SMBIOSMemoryType){26{'DDR4'}34{'DDR5'}35{'LPDDR5'}30{'LPDDR4'}default{''}}
+   $pn=(@($m|ForEach-Object{("$($_.Manufacturer) $($_.PartNumber)").Trim()}|Where-Object{$_}|Select-Object -Unique) -join ', ')
+   $t="$gb GB $type at $cfg MT/s, $($m.Count) module(s)$(if($pn){" ($pn)"})"
+   $base=($type -eq 'DDR4' -and $cfg -le 2400) -or ($type -eq 'DDR5' -and $cfg -le 4800)
+   if($rated -gt $cfg+50){$out+=@{L='RAM';S='tip';T="$t. The modules report $rated MT/s but run slower. $(if($laptop){'On laptops the maker usually fixes the speed.'}else{'Enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS.'})"}}
+   elseif($base -and -not $laptop){$out+=@{L='RAM';S='tip';T="$t. That is the safe default (JEDEC) speed. If your RAM is rated faster (search the part number), enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS: often a 10-20% gain in CPU-heavy games, especially on Ryzen."}}
+   else{$out+=@{L='RAM';S='ok';T=$t}}
+   if($gb -lt 8){$out+=@{L='RAM';S='tip';T="Only $gb GB of RAM: more memory is the single biggest upgrade for this PC."}}
+   if($m.Count -eq 1 -and -not $laptop){$out+=@{L='RAM';S='tip';T='One memory module = single channel. Two matching modules (dual channel) can raise FPS noticeably on integrated and CPU-limited systems.'}}}}catch{}
+ try{$dg=Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard -ErrorAction Stop
+  if(@($dg.SecurityServicesRunning) -contains 2){$out+=@{L='Security';S='info';T='Memory Integrity (Core isolation) is running. It protects against malicious drivers and costs a few percent of FPS in some games; see "Turn off Memory Integrity" under Performance & Gaming.'}}}catch{}
+ try{$hs=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name HwSchMode -ErrorAction Stop).HwSchMode
+  $out+=@{L='GPU scheduling';S='info';T="Hardware-accelerated GPU scheduling is $(if($hs -eq 2){'on'}elseif($hs -eq 1){'off'}else{'left to the driver'})."}}catch{}
+ ,$out}
+
 # ---------- Standby memory flush (run-once): same as RAMMap "Empty Standby List", done with the native API ----------
 function Clear-StandbyList{
  $f0=[long](Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory                 # KB
@@ -797,7 +864,8 @@ function Act-Label($a){switch($a.K){
  default{if(-not $a.N){'one-time command'}elseif($LBL.ContainsKey($a.N)){$LBL[$a.N]}elseif($a.K -eq 'Reg' -and $a.N -eq 'Value'){Split-Path $a.P -Leaf}else{$a.N}}}}
 
 # ---------- Apply / revert engine (works on "units": one switch each) ----------
-$warnBy=@{'Disable Connected Devices Platform (breaks Night light)'='Night light stops working and Settings > Display can crash until this is switched back off and the PC rebooted.'
+if(-not $warnBy){$warnBy=@{}}
+$warnBy+=@{'Disable Connected Devices Platform (breaks Night light)'='Night light stops working and Settings > Display can crash until this is switched back off and the PC rebooted.'
  'Use Cloudflare DNS (1.1.1.1)'='local network shares (NAS) and hotel or airport Wi-Fi sign-in pages may stop working.'
  'Remove Xbox apps'='Do not run if you use Xbox Game Pass, PC cloud saves, or Win+G Game Bar.'
  'Disable Xbox cloud-save task'='Do not run if you use Xbox Game Pass, PC cloud saves, or Win+G Game Bar.'
@@ -901,7 +969,7 @@ function Log($m){[void]$sync.Q.Enqueue("$m")}
 function Get-FnText($n){$c=Get-Command $n -CommandType Function;$a=$c.ScriptBlock.Ast
  if($a -isnot [Management.Automation.Language.FunctionDefinitionAst] -and $a.Parent -is [Management.Automation.Language.FunctionDefinitionAst]){$a=$a.Parent}
  if($a -is [Management.Automation.Language.FunctionDefinitionAst]){$a.Extent.Text}else{"function $n {`n$($c.ScriptBlock.ToString())`n}"}}
-$ENGINE_TXT=$PRE+"`n"+((@('Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
+$ENGINE_TXT=$PRE+"`n"+((@('Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Set-DxFlag','Test-DxFlag','Get-SysCheck','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
 # ---------- Thread safety: WPF objects (CheckBox, Border...) live ONLY on the UI thread ----------
 # Background runspaces receive plain snapshots (strings, numbers, bools, arrays, hashtables) and return plain hashtables.
 function Copy-Act($a){$c=@{};foreach($k in $a.Keys){$c[$k]=$a[$k]};$c}      # acts hold only strings/numbers/bools/$null
@@ -941,7 +1009,8 @@ try{
  foreach($u in $units){
   if(-not(Fits $u)){$ust[$u.Key]='N/A';continue}
   $ust[$u.Key]=if($u.Sub){if((Safe-Test $u.Acts[0]) -eq $true){'Applied'}else{'Not applied'}}else{$stat[$u.TweakName]}}
- $sync.Result=@{Ok=$true;Error='';Stat=$stat;Ust=$ust;ActSt=$ast}
+ $sync.Msg='Checking hardware and drivers...';$sys=@();try{$sys=Get-SysCheck}catch{}   # plain assignment: Get-SysCheck returns the array as ONE object (,$out)
+ $sync.Result=@{Ok=$true;Error='';Stat=$stat;Ust=$ust;ActSt=$ast;Sys=$sys}
 }catch{$sync.Result=@{Ok=$false;Error="$($_.Exception.Message)";Stat=@{};Ust=@{};ActSt=@{}}}
 '@
 $APPLYCODE=@'
@@ -983,6 +1052,12 @@ function Scan{
 # UI thread only: applies the plain result hashtable to the WPF controls.
 function Apply-ScanResult($r){
   $script:actSt=if($r.ActSt){$r.ActSt}else{@{}}
+  if($script:sysPanel){$script:sysPanel.Children.Clear()
+   foreach($i in @($r.Sys)){if(-not $i){continue};$tb=New-Object Windows.Controls.TextBlock;$tb.TextWrapping='Wrap';$tb.FontSize=12;$tb.Margin=[Windows.Thickness]::new(0,2,0,2)
+    $col=@{ok='#81C784';tip='#FFB74D';info='#90A4AE'}[$i.S];$mk=@{ok='OK  ';tip='TIP ';info='INFO'}[$i.S]
+    $r1=New-Object Windows.Documents.Run "$mk  $($i.L): ";$r1.Foreground=$bc.ConvertFromString($col);$r1.FontWeight=[Windows.FontWeights]::SemiBold
+    $r2=New-Object Windows.Documents.Run ([string]$i.T);$r2.Foreground=$bc.ConvertFromString('#C8C8C8');[void]$tb.Inlines.Add($r1);[void]$tb.Inlines.Add($r2);[void]$script:sysPanel.Children.Add($tb)}}
+  $script:sysTips=@(@($r.Sys)|Where-Object{$_ -and $_.S -eq 'tip'}|ForEach-Object{"$($_.L): $($_.T)"})
   $c=@{'Applied'=0;'Partial'=0;'Not applied'=0;'Unknown'=0;'N/A'=0}
   foreach($t in $db){$st=$r.Stat[$t.Name];$stat[$t.Name]=$st;if($st){Set-Status $t $(if($st -eq 'Applied' -and -not(Undoable $t)){'Applied-perm'}else{$st});$c[$st]++}}
   foreach($u in $units){$st=$r.Ust[$u.Key];$ust[$u.Key]=$st
@@ -1137,7 +1212,8 @@ $xaml=@'
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
    <DockPanel><Button x:Name="bToAdv" DockPanel.Dock="Right" Content="Advanced options" Style="{StaticResource Btn}" VerticalAlignment="Center"/>
     <TextBlock Text="DebloatHub" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Brand}" VerticalAlignment="Center"/></DockPanel>
-   <TextBlock x:Name="sStatus" Grid.Row="1" FontSize="15" Foreground="#C8C8C8" Margin="2,14,0,16" TextWrapping="Wrap" Text="Checking your PC..."/>
+   <StackPanel Grid.Row="1" Margin="2,14,0,16"><TextBlock x:Name="sStatus" FontSize="15" Foreground="#C8C8C8" TextWrapping="Wrap" Text="Checking your PC..."/>
+    <TextBlock x:Name="sTips" FontSize="12.5" Foreground="#FFB74D" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed"/></StackPanel>
    <UniformGrid Grid.Row="2" Columns="3" Height="200">
     <Button x:Name="bRec" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tRec" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
@@ -1164,7 +1240,7 @@ $xaml=@'
 '@
 $w=[Windows.Markup.XamlReader]::Parse($xaml)
 $w.Title="DebloatHub v$AppVersion"
-'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bGame','bUndo','tRec','tGame','tUndo','sRP','lnkShow','bReboot','slog'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
+'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bGame','bUndo','tRec','tGame','tUndo','sRP','lnkShow','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
 $pSafe.ToolTip='Recommended: performance and privacy tweaks that keep every common feature working and can all be undone with one click (no app removals, no cleanups). Tweaks in this preset carry a "Recommended" badge.'
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
 $bc=New-Object Windows.Media.BrushConverter
@@ -1184,6 +1260,10 @@ foreach($sec in $secs){
  $hd=New-Object Windows.Controls.DockPanel;$hd.Margin=[Windows.Thickness]::new(8,0,8,8)
  $cn=New-Object Windows.Controls.TextBlock;$cn.FontSize=12;$cn.VerticalAlignment='Center';$cn.Foreground=$accent;[Windows.Controls.DockPanel]::SetDock($cn,'Right');[void]$hd.Children.Add($cn);$secCnt+=$cn
  $h=New-Object Windows.Controls.TextBlock;$h.Text=$sec;$h.FontSize=17;$h.FontWeight=[Windows.FontWeights]::SemiBold;[void]$hd.Children.Add($h);[void]$sp.Children.Add($hd)
+ if($sec -eq 'Performance & Gaming'){$sc0=New-Object Windows.Controls.Border;$sc0.Background=$bc.ConvertFromString('#232323');$sc0.CornerRadius=New-Object Windows.CornerRadius 8;$sc0.Padding=[Windows.Thickness]::new(14,10,14,10);$sc0.Margin=[Windows.Thickness]::new(8,0,8,12)
+  $scs=New-Object Windows.Controls.StackPanel;$sch=New-Object Windows.Controls.TextBlock;$sch.Text='System check (read-only)';$sch.FontWeight=[Windows.FontWeights]::SemiBold;$sch.FontSize=13;[void]$scs.Children.Add($sch)
+  $scn=New-Object Windows.Controls.TextBlock;$scn.Text='Things DebloatHub cannot change but that often matter more than any tweak. Checked during every scan.';$scn.FontSize=11;$scn.Foreground=$bc.ConvertFromString('#9A9A9A');$scn.TextWrapping='Wrap';$scn.Margin=[Windows.Thickness]::new(0,2,0,6);[void]$scs.Children.Add($scn)
+  $script:sysPanel=New-Object Windows.Controls.StackPanel;[void]$scs.Children.Add($script:sysPanel);$sc0.Child=$scs;[void]$sp.Children.Add($sc0)}
  if($sec -eq $sSvc){$mp=New-Object Windows.Controls.StackPanel;$mp.Margin=[Windows.Thickness]::new(8,0,8,10)
   $mc=New-Object Windows.Controls.CheckBox;$mc.Style=$w.FindResource('Sw');$mc.Content='Strict mode: Disabled instead of Manual';$mc.IsChecked=$SvcStrict
   $mc.ToolTip='Manual (default): Windows can still start a service when an app or feature asks for it, so nothing breaks or crashes; it just no longer runs all the time. Strict: services are Disabled and never start. Use Strict only for services you are sure you never need.'
@@ -1314,7 +1394,8 @@ function Update-Simple{
  $tGame.Text=$(if($gn){"$gn change$(if($gn -ne 1){'s'}) to make"}else{'Done on this PC'});$bGame.IsEnabled=($gn -gt 0)
  $tUndo.Text=$(if($un){"$un change$(if($un -ne 1){'s'}) to undo"}else{'Nothing to undo'});$bUndo.IsEnabled=($un -gt 0)
  $sStatus.Text=$(if($script:needReboot){'Done. Restart your PC to finish.'}elseif(-not $rn){'Your PC is debloated. You can still undo it at any time.'}else{"Ready. Pick what you want; nothing changes until you confirm."})
- $bReboot.Visibility=$(if($script:needReboot){'Visible'}else{'Collapsed'})}
+ $bReboot.Visibility=$(if($script:needReboot){'Visible'}else{'Collapsed'})
+ $tp=@($script:sysTips);if($tp.Count){$sTips.Text="Worth a look (DebloatHub cannot change these):`n- "+($tp -join "`n- ");$sTips.Visibility='Visible'}else{$sTips.Visibility='Collapsed'}}
 function Simple-Run($what){
  if($script:busy){return}
  Pick $null                                       # every switch = current state of the PC
