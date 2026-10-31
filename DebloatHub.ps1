@@ -746,6 +746,8 @@ function Snap-Restore($a,$s){switch($a.K){
    $mode=switch([int]$s.start){0{'boot'}1{'system'}2{if([int]$s.delayed -eq 1){'delayed-auto'}else{'auto'}}3{'demand'}4{'disabled'}}
    $global:LASTEXITCODE=0;& sc.exe config $a.N start= $mode|Out-Null
    if($LASTEXITCODE -ne 0){throw "sc.exe config $($a.N) failed (exit code $LASTEXITCODE)"}
+   $sk="HKLM:\SYSTEM\CurrentControlSet\Services\$($a.N)";$dn=[int](Get-ItemProperty $sk -Name DelayedAutostart -ErrorAction SilentlyContinue).DelayedAutostart
+   if($dn -ne [int]$s.delayed){Set-ItemProperty $sk -Name DelayedAutostart -Value ([int]$s.delayed) -Type DWord}   # keep the flag exactly as it was
    if($s.running -and $mode -ne 'disabled'){try{Start-Service $a.N}catch{Log "   (start type restored; $($a.N) could not be restarted now - it starts when needed or after a reboot)"}}}
  'Task'{if($s.exists -and $s.enabled){$p=Task-Path $a.N;$n=Split-Path $a.N -Leaf
    if(Get-ScheduledTask -TaskPath $p -TaskName $n -ErrorAction SilentlyContinue){Enable-ScheduledTask -TaskPath $p -TaskName $n|Out-Null}else{Log "   (task $n no longer exists - nothing to restore)"}}}
@@ -926,7 +928,7 @@ function Run{
  $msg="Apply $($add.Count) change(s) and revert $($rem.Count)?";$ic='Question'
  if($one.Count){$ic='Warning';$msg+="`n`nRun-once actions (cannot be undone):`n - "+(($one|ForEach-Object{$_.Key -replace '\|',' > '}) -join "`n - ")
   if($add.Count -gt $one.Count -and @($one|Where-Object{$_.Key -match 'SFC|DISM|component cleanup'}).Count){$msg+="`n`nSFC/DISM can take 10+ minutes and work best on their own."}}
- $nr=@($rem|Where-Object{@($_.Acts|Where-Object{(Act-Revertible $_) -and $_.K -ne 'Cmd' -and -not(Snap-Read $_)}).Count}|ForEach-Object{$_.Key -replace '\|',' > '})
+ $nr=@($rem|Where-Object{@($_.Acts|Where-Object{(Act-Revertible $_) -and $_.K -ne 'Cmd'}).Count -and -not @($_.Acts|Where-Object{$_.K -ne 'Cmd' -and (Snap-Read $_)}).Count}|ForEach-Object{$_.Key -replace '\|',' > '})
  if($nr.Count){$ic='Warning';$msg+="`n`nNo recorded original for:`n - "+($nr -join "`n - ")+"`nThese were already applied before DebloatHub recorded anything (or by another tool), so undo sets Windows' documented default instead."}
  $wn=@($add|ForEach-Object{$_.T.Name}|Select-Object -Unique|Where-Object{$warnBy.ContainsKey($_)})
  if($wn.Count){$ic='Warning';$msg+="`n`nRead before continuing:";foreach($n in $wn){$msg+="`n - $($n): $($warnBy[$n])"}}
@@ -943,7 +945,7 @@ function Invoke-Now($t,$undo){                  # runs ONE tweak right away thro
   $msg="Revert the $ya applied part(s) of '$nm' now?`n`nParts that are not applied are left untouched. Each part goes back to what was there before DebloatHub changed it."
   $irr=@($t.Acts|Where-Object{-not(Act-Revertible $_)}).Count
   if($irr){$msg+="`n`n$irr part(s) cannot be undone automatically (removed apps / run-once commands) and are skipped."}
-  $nr=0;for($i=0;$i -lt @($t.Acts).Count;$i++){$a=@($t.Acts)[$i];if($parts[$i] -eq 'Y' -and (Act-Revertible $a) -and $a.K -ne 'Cmd' -and -not(Snap-Read $a)){$nr++}}
+  $nr=0;$anyRec=[bool]@($t.Acts|Where-Object{$_.K -ne 'Cmd' -and (Snap-Read $_)}).Count;if(-not $anyRec){for($i=0;$i -lt @($t.Acts).Count;$i++){$a=@($t.Acts)[$i];if($parts[$i] -eq 'Y' -and (Act-Revertible $a) -and $a.K -ne 'Cmd'){$nr++}}}
   if($nr){$msg+="`n`nNo recorded original for $nr part(s): for those, undo sets Windows' documented default."}}
  else{$msg="Apply the $na missing part(s) of '$nm' now?"}
  if(-not $dry -and [Windows.MessageBox]::Show($msg,'DebloatHub','YesNo','Question') -ne 'Yes'){return}
@@ -1056,14 +1058,18 @@ if($rp){$sync.Msg='Creating restore point...';Log 'Creating restore point...'
  finally{if($null -eq $rpo){Remove-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue}else{Set-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -Value $rpo}}}
 foreach($it in $items){$n++;$sync.Msg="Working $n of ${tot}: $($it.Label)";Log $it.Label
  $bad=@();$did=0
+ $own=$it.Undo -and [bool]@($it.Acts|Where-Object{$_.K -notin 'App','Cmd' -and (Snap-Read $_)}).Count   # DebloatHub recorded originals for this switch
  foreach($a in $it.Acts){Log "   $(Show-Act $a)";if($dry){continue}
   try{
    if($it.Undo -and -not(Act-Revertible $a)){Log '   = cannot be undone automatically - left as is';continue}
    if($it.Undo -and (Act-Absent $a)){Log '   = not present on this PC - nothing to restore';continue}
+   if($own -and $a.K -notin 'App','Cmd' -and -not(Snap-Read $a)){Log '   = was already like this before DebloatHub changed the rest - left as is';continue}
    $before=Safe-Test $a
    if(-not $it.Undo -and $before -eq $true){Log '   = already applied - nothing to do';continue}                 # apply is idempotent
    if($it.Undo -and $before -eq $false){Log '   = not currently applied - left untouched';continue}             # revert touches only what is applied
-   if($it.Undo){Undo-Act $a}else{Snap-Take $a $before;Do-Act $a $false}
+   $fresh=(-not $it.Undo) -and -not(Snap-Read $a)
+   try{if($it.Undo){Undo-Act $a}else{Snap-Take $a $before;Do-Act $a $false}}
+   catch{if($fresh){Snap-Clear $a};throw}                                                                        # failed apply: drop the record it just wrote
    $after=Safe-Test $a                                                                                          # verify against the real system, do not trust "no exception"
    if($null -ne $after -and $after -eq [bool]$it.Undo){throw "the change did not take effect (the setting is still $(if($it.Undo){'applied'}else{'not applied'}))"}
    $did++}

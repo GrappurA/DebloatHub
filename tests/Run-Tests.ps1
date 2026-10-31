@@ -24,6 +24,7 @@ function DhtFinish{
  $fail=@($DhtRes.checks|Where-Object{-not $_.ok})
  $md=@("### DebloatHub tests - $($DhtRes.os), $($DhtRes.mode) mode","","$(@($DhtRes.checks).Count - $fail.Count) passed, $($fail.Count) failed","","| | Check | Detail |","|---|---|---|")
  foreach($c in $DhtRes.checks){$md+="| $(if($c.ok){'PASS'}else{'**FAIL**'}) | $($c.name) | $(($c.detail -replace '\|','/' -replace "`r?`n",' ').Substring(0,[Math]::Min(300,$c.detail.Length))) |"}
+ foreach($f in @(Get-ChildItem $DhtOut -Filter *.png -ErrorAction SilentlyContinue)){$b=[Convert]::ToBase64String([IO.File]::ReadAllBytes($f.FullName));Write-Host "::group::$($f.Name) (base64)";for($i=0;$i -lt $b.Length;$i+=4000){Write-Host "DHPNG $($f.BaseName) $($b.Substring($i,[Math]::Min(4000,$b.Length-$i)))"};Write-Host '::endgroup::'}
  if($env:GITHUB_STEP_SUMMARY){$md|Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8}
  $md|Set-Content (Join-Path $DhtOut 'summary.md') -Encoding UTF8
  if($fail.Count){exit 1}else{exit 0}}
@@ -73,17 +74,17 @@ DhtCheck 'Parse with Windows PowerShell 5.1' ($perr.Count -eq 0) $(if($perr.Coun
 if($perr.Count){DhtFinish}
 
 # ---------------- 2) load (builds the tweak list and the whole UI, does not show it) ----------------
-$t0=Get-Date
+$DhtT0=Get-Date
 try{. $DhtScript -NoShow
  $ErrorActionPreference='Continue'
- DhtCheck 'Load script with -NoShow' ($db.Count -gt 50 -and $units.Count -gt 50) ("{0:N1} s, {1} tweaks, {2} switches, {3} sections, W11={4}, strict={5}" -f ((Get-Date)-$t0).TotalSeconds,$db.Count,$units.Count,$secs.Count,$W11,$SvcStrict)}
+ DhtCheck 'Load script with -NoShow' ($db.Count -gt 50 -and $units.Count -gt 50) ("{0:N1} s, {1} tweaks, {2} switches, {3} sections, W11={4}, strict={5}" -f ((Get-Date)-$DhtT0).TotalSeconds,$db.Count,$units.Count,$secs.Count,$W11,$SvcStrict)}
 catch{$ErrorActionPreference='Continue';DhtCheck 'Load script with -NoShow' $false "$($_.Exception.Message) $($_.ScriptStackTrace)";DhtFinish}
 DhtCheck 'Service mode picked up from HKCU' ($SvcStrict -eq ($DhtMode -eq 'Strict')) "SvcStrict=$SvcStrict"
 
 # ---------------- 3) sanity ----------------
 $dupN=@($db|Group-Object Name|Where-Object Count -gt 1|ForEach-Object Name)
 DhtCheck 'Unique tweak names' (-not $dupN.Count) ($dupN -join '; ')
-$dupK=@($units|Group-Object Key|Where-Object Count -gt 1|ForEach-Object Name)
+$dupK=@($units|Group-Object {$_.Key}|Where-Object Count -gt 1|ForEach-Object Name)
 DhtCheck 'Unique switch keys' (-not $dupK.Count) ($dupK -join '; ')
 $noMore=@($db|Where-Object{-not $more.ContainsKey($_.Name)}|ForEach-Object Name)
 DhtCheck 'Every tweak has need/pros/cons' (-not $noMore.Count) ($noMore -join '; ')
@@ -94,9 +95,9 @@ DhtCheck 'Recommended selects switches' ($recN -gt 20) "$recN switches"
 
 try{
 # ---------------- 4) every detector against the real system ----------------
-$derr=@();$t0=Get-Date
+$derr=@();$DhtT0=Get-Date
 foreach($t in $db){foreach($a in $t.Acts){try{$null=Test-Act $a}catch{$derr+="$($t.Name) / $(Show-Act $a): $($_.Exception.Message)"}}}
-DhtCheck 'All detectors run without errors' (-not $derr.Count) ("{0:N0} s; {1}" -f ((Get-Date)-$t0).TotalSeconds,(($derr|Select-Object -First 8) -join ' || '))
+DhtCheck 'All detectors run without errors' (-not $derr.Count) ("{0:N0} s; {1}" -f ((Get-Date)-$DhtT0).TotalSeconds,(($derr|Select-Object -First 8) -join ' || '))
 
 # ---------------- 5) background scan + UI update ----------------
 $scan=DhtEngine (New-ScanData) $SCANCODE
@@ -117,24 +118,27 @@ DhtCheck 'Simple view counts' ($tRec.Text -and $tUndo.Text) "Debloat: '$($tRec.T
 
 # ---------------- 7) apply -> verify -> undo round trip ----------------
 $kinds='Reg','Svc','SvcM','Task','Startup'
-$cand=@($units|Where-Object{(Fits $_.T) -and $_.Box.IsEnabled -and $ust[$_.Key] -notin 'Applied','N/A' -and -not @($_.Acts|Where-Object{$_.K -notin $kinds}).Count})
+# Autoruns tasks/services are this machine's own software (e.g. the CI runner agent): environment-specific, so not part of the round trip
+$cand=@($units|Where-Object{(Fits $_.T) -and $_.Box.IsEnabled -and $ust[$_.Key] -notin 'Applied','N/A' -and -not @($_.Acts|Where-Object{$_.K -notin $kinds}).Count -and $_.T.Name -notmatch '^(Task|Service): '})
 $acts=@();foreach($u in $cand){foreach($a in $u.Acts){$acts+=,$a}}
 $before=@{};foreach($a in $acts){$before[(Snap-Id $a)]=DhtState $a}
 $items=@(foreach($u in $cand){@{Label="[APPLY] $($u.Key)";Acts=@($u.Acts|ForEach-Object{Copy-Act $_});Undo=$false}})
-$t0=Get-Date;$ap=DhtEngine @{items=$items;dry=$false;rp=$false} $APPLYCODE
+$DhtT0=Get-Date;$ap=DhtEngine @{items=$items;dry=$false;rp=$false} $APPLYCODE
 $apFail=@($ap.Result.Failed)
-DhtCheck 'Apply: every change verified on the system' (-not $apFail.Count -and -not $ap.Errors.Count) ("{0} switches, {1} done, {2} skipped, {3:N0} s{4}" -f $cand.Count,$ap.Result.Done,$ap.Result.Skipped,((Get-Date)-$t0).TotalSeconds,$(if($apFail.Count -or $ap.Errors.Count){'; '+((@($apFail)+@($ap.Errors)|Select-Object -First 6) -join ' || ')}))
+DhtCheck 'Apply: every change verified on the system' (-not $apFail.Count -and -not $ap.Errors.Count) ("{0} switches, {1} done, {2} skipped, {3:N0} s{4}" -f $cand.Count,$ap.Result.Done,$ap.Result.Skipped,((Get-Date)-$DhtT0).TotalSeconds,$(if($apFail.Count -or $ap.Errors.Count){'; '+((@($apFail)+@($ap.Errors)|Select-Object -First 6) -join ' || ')}))
 
 # rescan, then let the Simple view pick what "Undo" would revert (tests DH-Changed / Undo-Units / Pending)
 $scan2=DhtEngine (New-ScanData) $SCANCODE;Scan-Done $scan2.Result
 $undoUnits=@(Undo-Units)
-DhtCheck 'Simple "Undo" finds the applied changes' ($undoUnits.Count -ge [int]$ap.Result.Done -and [int]$ap.Result.Done -gt 0) "$($undoUnits.Count) switches to undo, $($ap.Result.Done) applied"
+$nowApplied=@($cand|Where-Object{$ust[$_.Key] -eq 'Applied'})          # (mutually exclusive pairs: the second one applied wins)
+$missing=@($nowApplied|Where-Object{$undoUnits -notcontains $_}|ForEach-Object{$_.Key})
+DhtCheck 'Simple "Undo" finds the applied changes' ($nowApplied.Count -gt 0 -and -not $missing.Count) "$($undoUnits.Count) switches to undo, $($nowApplied.Count) applied now$(if($missing.Count){'; missing: '+($missing -join '; ')})"
 Pick $null;foreach($u in $undoUnits){$u.Box.IsChecked=$false};Sync-Masters
 $pend=Pending;$rem=@($pend[1])
 $uitems=@(foreach($u in $rem){@{Label="[REVERT] $($u.Key)";Acts=@($u.Acts|ForEach-Object{Copy-Act $_});Undo=$true}})
-$t0=Get-Date;$un=DhtEngine @{items=$uitems;dry=$false;rp=$false} $APPLYCODE
+$DhtT0=Get-Date;$un=DhtEngine @{items=$uitems;dry=$false;rp=$false} $APPLYCODE
 $unFail=@($un.Result.Failed)
-DhtCheck 'Undo: every revert verified on the system' (-not $unFail.Count -and -not $un.Errors.Count) ("{0} switches, {1} done, {2:N0} s{3}" -f $rem.Count,$un.Result.Done,((Get-Date)-$t0).TotalSeconds,$(if($unFail.Count -or $un.Errors.Count){'; '+((@($unFail)+@($un.Errors)|Select-Object -First 6) -join ' || ')}))
+DhtCheck 'Undo: every revert verified on the system' (-not $unFail.Count -and -not $un.Errors.Count) ("{0} switches, {1} done, {2:N0} s{3}" -f $rem.Count,$un.Result.Done,((Get-Date)-$DhtT0).TotalSeconds,$(if($unFail.Count -or $un.Errors.Count){'; '+((@($unFail)+@($un.Errors)|Select-Object -First 6) -join ' || ')}))
 
 $diff=@();foreach($a in $acts){$id=Snap-Id $a;$now=DhtState $a;if($now -ne $before[$id]){$diff+="$(Show-Act $a): before '$($before[$id])', after undo '$now'"};$DhtRes.roundTrip+=,([ordered]@{act=(Show-Act $a);before=$before[$id];after=$now})}
 DhtCheck 'Undo restores the exact original state' (-not $diff.Count) ("{0} settings compared{1}" -f $acts.Count,$(if($diff.Count){"; $($diff.Count) differ: "+(($diff|Select-Object -First 8) -join ' || ')}))
