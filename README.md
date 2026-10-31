@@ -47,7 +47,7 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 - **Real undo.** Before the first change, DebloatHub saves the *original* value, start type, task state or feature state. Switching it off later restores exactly that, not a guessed "default".
 - **Verified apply.** After each change the real system is checked again. Anything that did not take effect is reported as failed, not as done.
 - **Safety net.** Optional restore point before applying, a Dry run mode that only previews, and a confirmation that lists one-time actions and risky items.
-- **Recommended preset.** A curated list of performance and privacy tweaks, marked with a *Recommended* badge. Its rules: every common feature keeps working, and everything can be undone with one click, so it contains no app removals and no one-time cleanups.
+- **Recommended preset.** A curated list marked with a *Recommended* badge: performance and privacy tweaks, hidden taskbar search, bloat apps removed (Teams, Quick Assist, Phone Link, Media Player, Movies & TV and Get Help are kept), and every non-essential startup app off. Drivers, audio, touchpad, GPU, security, sync, VPN, remote access and G-Helper stay on. Everything except the removed apps can be undone with one click.
 - **Other presets.** *Privacy* and *Gaming* also only move switches; nothing happens until you press Apply. *Reset* returns every switch to the current system state.
 - **Visual Effects presets.** *Maximize looks*, *Recommended* and *Maximize performance* set the switches; after Apply, the effects change instantly, without a sign-out.
 - **Save and load your selection** as a JSON file to reuse on other PCs.
@@ -93,7 +93,7 @@ All versions and their changes are listed on the [Releases page](https://github.
 | **Background Services** | **Manual mode** (default): services no longer start at boot, but Windows still starts them when something asks, so nothing breaks. **Strict mode**: Disabled, never starts. Per-service switches grouped by feature, including third-party updaters (Google, Brave, Adobe, Dropbox, HP, Dell, AMD): printing & scanning, Xbox, Phone Link, Windows Hello biometrics, Bluetooth, network sharing, Remote Desktop, IP Helper, diagnostics, ASUS services, SysMain, Search indexing, start-on-demand services, and fewer `svchost.exe` processes |
 | **Memory (RAM)** | Ndu driver (non-paged pool leak), memory compression, empty standby memory |
 | **Visual Effects** | All 17 *Performance Options* effects as separate switches, plus transparency, with three presets |
-| **Startup Programs** | Every Run-key and Startup-folder entry on this PC, disabled the same way as Task Manager > Startup apps |
+| **Autoruns** | Everything that starts automatically: every startup app (Run keys and Startup folders, same mechanism as Task Manager), third-party scheduled tasks and third-party auto-start services. Disable only, never delete, always undoable. |
 | **System, Security & Network** | Delivery Optimization, Storage Sense, update restarts, BitLocker auto-encryption, Cloudflare DNS, AutoPlay, LLMNR, Remote Assistance, Windows Script Host, clipboard history, online speech, legacy Windows features (SMB 1.0, PowerShell 2.0...) |
 | **Maintenance & Repair** | One-time actions: SFC, DISM, component cleanup, old driver packages, temp/browser/thumbnail/crash-dump/Delivery Optimization cleanup, Windows Update reset, network reset, DNS flush, SSD TRIM |
 

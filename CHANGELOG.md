@@ -11,6 +11,18 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
   - Each button shows how many changes it would make. *Show me exactly what changes* opens Advanced with the switches pre-set.
   - Restore point on by default; a "Restart now" button appears after applying.
   - You can switch between the views at any time ("Advanced options" / "Simple view").
+- **Autoruns** (was *Startup Programs*): also lists third-party scheduled tasks and third-party auto-start services. Disable only, nothing is deleted:
+  - Tasks are disabled.
+  - Services go to Manual (Disabled in Strict mode).
+  - Drivers, security, VPN and similar entries are marked Moderate/Advanced.
+- **Hide taskbar search completely**, the alternative to icon-only (switching one on turns the other off).
+- **Recommended is more drastic.** It now also:
+  - hides the taskbar search;
+  - removes promo apps and games, Microsoft consumer and legacy apps, Windows 11 extras, Xbox and Copilot apps (keeps Teams, Quick Assist, Phone Link, Media Player, Movies & TV and Get Help);
+  - disables every non-essential startup app (keeps drivers, audio, touchpad, GPU, security, sync, VPN, password managers, remote access, G-Helper and Teams);
+  - sets IP Helper and the diagnostics services to Manual.
+
+  App removals are the only part of Recommended that can't be undone with one click.
 - **System check (read-only)** at the top of *Performance & Gaming*, refreshed on every scan. It covers what matters more than most tweaks but can't be changed from Windows:
   - **GPU driver:** missing, or older than 6 months.
   - **Display:** running at 60 Hz when the screen reports more.
