@@ -2,6 +2,46 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-10-29
+
+### Added
+- **Simple view (new start page).** On first start you choose **Simple** or **Advanced**, and can tick *Remember my choice*.
+  - Simple shows three big buttons: **Debloat** (the Recommended preset), **Debloat + Gaming** (adds raw mouse input, no Game Bar or Sticky Keys pop-ups, faster sleeping tabs in Edge) and **Undo**.
+  - **Undo** puts back only what DebloatHub itself changed: settings that have a recorded original or a command marker.
+  - Each button shows how many changes it would make. *Show me exactly what changes* opens Advanced with the switches pre-set.
+  - Restore point on by default; a "Restart now" button appears after applying.
+  - You can switch between the views at any time ("Advanced options" / "Simple view").
+- **System check (read-only)** at the top of *Performance & Gaming*, refreshed on every scan. It covers what matters more than most tweaks but can't be changed from Windows:
+  - **GPU driver:** missing, or older than 6 months.
+  - **Display:** running at 60 Hz when the screen reports more.
+  - **RAM:** running at the default JEDEC speed (enable XMP/EXPO), below the module rating, under 8 GB, or a single module (single channel).
+  - **Memory Integrity and GPU scheduling** status.
+  - The Simple view lists the tips under its status line.
+- **Gaming switches:** *Make sure Game Mode is on*, *Optimizations for windowed games* (Windows 11; other settings in the same registry value are kept), *Turn on hardware-accelerated GPU scheduling*, and *Turn off Memory Integrity (Core isolation)* (Advanced, with a warning in the confirmation).
+- **Remove Windows 11 extra apps:** Outlook (new), Mail and Calendar (old), Dev Home, To Do, Family, Quick Assist, Bing Search, Journal, Phone Link. Each one is its own switch.
+- **Xbox apps:** now include the current Xbox app (`Microsoft.GamingApp`).
+- **Debloat + Gaming** (Simple view) now also turns on Game Mode and windowed-game optimizations.
+- **Manual mode for Background Services (default).** Switched-on services are set to *Manual* instead of *Disabled*: they no longer start at boot, but Windows still starts them when an app or feature asks, so nothing crashes or silently breaks.
+  - Services that already don't start at boot on your PC are not listed, and each group says which ones were left out.
+  - **Strict mode** (a switch in the section) brings back *Disabled* for "never, even if asked".
+- **Third-party updaters & helpers: start on demand.** Google/Chrome, Brave, Adobe, Dropbox updaters and HP, Dell, AMD, Killer telemetry helpers are set to Manual. Only installed services are shown, and the apps still update through their own tasks.
+- **New browser tweaks** (sources: Microsoft Edge policy docs, Mozilla's official ADMX templates):
+  - *Edge: no Microsoft Rewards or MSN news feed*: useful even if you never open Edge, because its new tab page and Rewards no longer phone home.
+  - *Edge: put background tabs to sleep sooner*: sleeping tabs after 5 minutes, optional efficiency mode.
+  - *Firefox: no sponsored shortcuts, stories, suggestions or feature ads*.
+  - *Firefox: update only while Firefox is open*: no background update task while it's closed.
+- **Recommended preset rebuilt** as an explicit, curated list with a *Recommended* badge on each included tweak.
+  - It covers performance and privacy wins that keep common features working and are fully undoable: no app removals, no cleanups, and the Visual Effects *Recommended* set.
+  - The log says how many switches the preset turned on.
+
+### Changed
+- **Browser and IDE tweaks only appear when that program is installed** (Edge, Chrome, Firefox, Visual Studio, VS Code). They also appear when their policy key already exists, so settings applied earlier can still be reverted. Before, Chrome/Firefox policies were offered and applied even without the browser, which later made a newly installed browser say "managed by your organization".
+- "Disable Connected Devices Platform (breaks Night light)" always uses Disabled in both modes, so its warning stays accurate.
+
+### Fixed
+- Undo records for services are shared between Disabled and Manual, so switching mode never loses the original start type. Records from v1.0.x are still read.
+- Re-applying a tweak can no longer overwrite its recorded original with an already-changed state.
+
 ## [1.0.2] - 2026-10-28
 
 ### Changed

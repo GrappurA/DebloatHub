@@ -2,7 +2,8 @@
 # DebloatHub - curated, previewable, reversible Windows tweaks in one GUI.
 # Run: right-click > "Run with PowerShell" (auto-elevates). Try it in a VM first.
 param([switch]$Elevated,[switch]$ShowConsole)
-$AppVersion='1.0.2'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$AppVersion='1.1.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$MyPath=$PSCommandPath
 $isAdmin=(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if(-not $isAdmin -and -not $Elevated){
   # Normal run: console hidden. Add -ShowConsole to keep the console visible for troubleshooting.
@@ -68,7 +69,7 @@ fTw $s6 'Disable Copilot' 'Turns off the Copilot sidebar by policy. This only af
 
 fTw $s2 'Remove Microsoft consumer apps' 'Uninstalls News, Weather, Get Help, Tips, Office hub ("Microsoft 365"), Solitaire, Feedback Hub and Clipchamp. Each app can be picked individually.' Safe 'Win11Debloat, W10Debloater, Sophia' Any 'safe' @('Microsoft.BingNews','Microsoft.BingWeather','Microsoft.GetHelp','Microsoft.Getstarted','Microsoft.MicrosoftOfficeHub','Microsoft.MicrosoftSolitaireCollection','Microsoft.WindowsFeedbackHub','Clipchamp.Clipchamp'|ForEach-Object{fApp $_})
 fTw $s8 'Remove third-party promo apps' 'Uninstalls pre-installed promotional apps and stubs: Candy Crush, Spotify, TikTok, Disney+, Instagram, Facebook, LinkedIn.' Safe 'Win11Debloat, W10Debloater, W4RH4WK' Any 'safe' @('*CandyCrush*','*Spotify*','*TikTok*','*Disney*','*Instagram*','*Facebook*','*LinkedIn*'|ForEach-Object{fApp $_})
-fTw $s7 'Remove Xbox apps' 'Uninstalls the Xbox app, Game Bar (Win+G), Xbox overlays and Xbox identity/speech components. Each package can be picked individually.' Moderate 'WinUtil, Win11Debloat' Any '' @('Microsoft.XboxApp','Microsoft.XboxGamingOverlay','Microsoft.XboxGameOverlay','Microsoft.Xbox.TCUI','Microsoft.XboxSpeechToTextOverlay'|ForEach-Object{fApp $_}) 'Do not run if you use Xbox Game Pass, PC cloud saves, or Win+G Game Bar.'
+fTw $s7 'Remove Xbox apps' 'Uninstalls the Xbox app, Game Bar (Win+G), Xbox overlays and Xbox identity/speech components. Each package can be picked individually.' Moderate 'WinUtil, Win11Debloat' Any '' @('Microsoft.GamingApp','Microsoft.XboxApp','Microsoft.XboxGamingOverlay','Microsoft.XboxGameOverlay','Microsoft.Xbox.TCUI','Microsoft.XboxSpeechToTextOverlay'|ForEach-Object{fApp $_}) 'Do not run if you use Xbox Game Pass, PC cloud saves, or Win+G Game Bar.'
 fTw $s9 'Remove 3D / Mixed Reality apps' 'Uninstalls 3D Builder, 3D Viewer, Print 3D and the Mixed Reality Portal.' Safe 'W10Debloater, W4RH4WK' Any 'safe' @('Microsoft.3DBuilder','Microsoft.Microsoft3DViewer','Microsoft.Print3D','Microsoft.MixedReality.Portal'|ForEach-Object{fApp $_})
 
 fTw $s3 'Disable Start/Settings suggestions & silent app installs' 'Stops Windows promoting apps in Start, Settings and the Start menu, and stops it installing "suggested" apps (games, Spotify and so on) in the background.' Safe 'WinUtil, Win11Debloat, Sophia, W10Debloater' Any 'safe,privacy' ('SubscribedContent-338388Value','SubscribedContent-338389Value','SubscribedContent-353696Value','SystemPaneSuggestionsEnabled','SilentInstalledAppsEnabled','PreInstalledAppsEnabled','OemPreInstalledAppsEnabled'|ForEach-Object{fReg $CDM $_ 0 1})
@@ -209,13 +210,24 @@ $more=@{
 # ---------- Round 2: startup, services, features, Edge/background, OEM (written from my own knowledge, NOT from the 7 repos - verify) ----------
 $s15='Startup Programs';$s16='Services (start on demand)';$s17='Optional Windows Features';$s18='Edge & Background Apps';$s19='OEM Utilities'
 $secs=@($secs|Where-Object{$_ -ne $s14})+@($s18,$s15,$s16,$s17,$s19,$s14)
-$LBL=@{'Microsoft.549981C3F5F10'='Cortana';'*DellInc*'='Dell apps';'*AD2F1837*'='HP apps (Support Assistant, Smart...)';'*Lenovo*'='Lenovo apps (Vantage...)';'*AcerIncorporated*'='Acer apps';'*ASUS*'='ASUS apps (Armoury Crate...)';'*McAfee*'='McAfee trial';'*Norton*'='Norton trial'
+$LBL=@{'Microsoft.549981C3F5F10'='Cortana';'Microsoft.GamingApp'='Xbox app';'Microsoft.XboxApp'='Xbox Console Companion (old)';'Microsoft.OutlookForWindows'='Outlook (new)';'microsoft.windowscommunicationsapps'='Mail and Calendar (old)';'Microsoft.Windows.DevHome'='Dev Home';'Microsoft.Todos'='Microsoft To Do';'MicrosoftCorporationII.MicrosoftFamily'='Microsoft Family';'MicrosoftCorporationII.QuickAssist'='Quick Assist';'Microsoft.BingSearch'='Bing Search';'Microsoft.MicrosoftJournal'='Journal';'Microsoft.YourPhone'='Phone Link';'MicrosoftWindows.CrossDevice'='Phone Link helper (Cross Device)';'*DellInc*'='Dell apps';'*AD2F1837*'='HP apps (Support Assistant, Smart...)';'*Lenovo*'='Lenovo apps (Vantage...)';'*AcerIncorporated*'='Acer apps';'*ASUS*'='ASUS apps (Armoury Crate...)';'*McAfee*'='McAfee trial';'*Norton*'='Norton trial'
  MapsBroker='Downloaded Maps Manager';TrkWks='Distributed Link Tracking';PcaSvc='Program Compatibility Assistant';edgeupdate='Edge Update'
  MicrosoftWindowsPowerShellV2Root='PowerShell 2.0';SMB1Protocol='SMB 1.0 file sharing';'Printing-XPSServices-Features'='XPS Services';'Internet-Explorer-Optional-amd64'='Internet Explorer mode';'WorkFolders-Client'='Work Folders';FaxServicesClientPackage='Windows Fax and Scan';TelnetClient='Telnet client';'01'='Storage Sense on';'04'='Delete temporary files';'08'='Clean up Recycle Bin';'256'='Recycle Bin: delete after 30 days';'2048'='Run every week'}
 $sd='DebloatHub'
 $EP='HKLM:\SOFTWARE\Policies\Microsoft\Edge'
-$db+=fTw $s18 'Disable Edge startup boost & background mode' 'Edge stops pre-loading itself when you sign in (Startup boost) and stops running in the background after you close the last window.' Safe $sd Any 'safe' @((fReg $EP StartupBoostEnabled 0 $null),(fReg $EP BackgroundModeEnabled 0 $null)) 'Good RAM saver if you use Edge or have it installed. Edge will say it is managed by your organization; that is just the policy.'
-$db+=fTw $s18 'Quiet Edge: no sidebar, shopping assistant or first-run' 'Edge policies that hide the sidebar (Copilot/apps pane), turn off the shopping assistant (coupons, price comparison) and skip the welcome/first-run pages.' Safe $sd Any 'safe' @((fReg $EP HubsSidebarEnabled 0 $null),(fReg $EP EdgeShoppingAssistantEnabled 0 $null),(fReg $EP HideFirstRunExperience 1 $null))
+# ---------- Installed apps: browser and IDE tweaks are offered only when that program is installed ----------
+# ...or when its policy key already exists, so policies applied earlier (or by another tool) can still be reverted.
+function Find-App($exe,$paths){
+ foreach($h in 'HKLM:','HKCU:'){if(Test-Path -LiteralPath (Map-Hive "$h\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$exe")){return $true}}   # "App Paths" = where installers register their .exe
+ foreach($x in $paths){if($x -and (Test-Path -LiteralPath $x)){return $true}}
+ return $false}
+$pf86=${env:ProgramFiles(x86)}
+$haveEdge   =(Find-App 'msedge.exe'  @("$pf86\Microsoft\Edge\Application\msedge.exe","$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe")) -or (Test-Path $EP)
+$haveChrome =(Find-App 'chrome.exe'  @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe","$pf86\Google\Chrome\Application\chrome.exe","$UserLocal\Google\Chrome\Application\chrome.exe")) -or (Test-Path 'HKLM:\SOFTWARE\Policies\Google\Chrome')
+$haveFirefox=(Find-App 'firefox.exe' @("$env:ProgramFiles\Mozilla Firefox\firefox.exe","$pf86\Mozilla Firefox\firefox.exe","$UserLocal\Mozilla Firefox\firefox.exe")) -or (Test-Path 'HKLM:\SOFTWARE\Policies\Mozilla\Firefox')
+$haveVS     =(Test-Path "$pf86\Microsoft Visual Studio\Installer\vswhere.exe") -or (Test-Path 'HKLM:\SOFTWARE\Policies\Microsoft\VisualStudio\SQM')
+if($haveEdge){$db+=fTw $s18 'Disable Edge startup boost & background mode' 'Edge stops pre-loading itself when you sign in (Startup boost) and stops running in the background after you close the last window.' Safe $sd Any 'safe' @((fReg $EP StartupBoostEnabled 0 $null),(fReg $EP BackgroundModeEnabled 0 $null)) 'Good RAM saver if you use Edge or have it installed. Edge will say it is managed by your organization; that is just the policy.'}
+if($haveEdge){$db+=fTw $s18 'Quiet Edge: no sidebar, shopping assistant or first-run' 'Edge policies that hide the sidebar (Copilot/apps pane), turn off the shopping assistant (coupons, price comparison) and skip the welcome/first-run pages.' Safe $sd Any 'safe' @((fReg $EP HubsSidebarEnabled 0 $null),(fReg $EP EdgeShoppingAssistantEnabled 0 $null),(fReg $EP HideFirstRunExperience 1 $null))}
 $db+=fTw $s18 'Block apps from running in the background' 'Forces all Microsoft Store apps to stay closed when not open (policy plus the per-user setting). Normal desktop programs are not affected.' Moderate $sd Any 'gaming' @((fReg "$POL\AppPrivacy" LetAppsRunInBackground 2 $null),(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications' GlobalUserDisabled 1 0)) 'Skip if you depend on Mail, Calendar or Alarms notifying you while closed.'
 $db+=fTw $s16 'Set rarely-used services to start on demand' 'Changes Downloaded Maps Manager, Distributed Link Tracking, Program Compatibility Assistant and Edge Update from Automatic to Manual. Windows still starts them when something needs them. Pick items individually.' Moderate $sd Any '' @((fSvm MapsBroker Automatic),(fSvm TrkWks Automatic),(fSvm PcaSvc Automatic),(fSvm edgeupdate Automatic)) 'Low risk because services still start when needed. Choose individually if unsure.'
 $db+=fTw $s17 'Remove legacy Windows features' 'Turns off old optional Windows features: PowerShell 2.0, SMB 1.0, XPS Services, Internet Explorer 11, Work Folders, Windows Fax and Scan, Telnet client. Pick items individually; reboot needed.' Moderate $sd Any '' @((fFeat MicrosoftWindowsPowerShellV2Root),(fFeat SMB1Protocol),(fFeat Printing-XPSServices-Features),(fFeat Internet-Explorer-Optional-amd64),(fFeat WorkFolders-Client),(fFeat FaxServicesClientPackage),(fFeat TelnetClient)) 'Safe for most home users. Keep SMB 1.0 or IE mode if an old NAS or intranet site needs them.'
@@ -448,18 +460,22 @@ $s21='Developer Tools Privacy';$s22='Browser Privacy & Security';$s23='Windows H
 $secs=@($secs|Where-Object{$_ -ne $s14})+@($s21,$s22,$s23,$s14)
 $VSC="$UserAppData\Code\User\settings.json";$CP='HKLM:\SOFTWARE\Policies\Google\Chrome';$FP='HKLM:\SOFTWARE\Policies\Mozilla\Firefox';$SS='HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy'
 $splitOK=@();$excl=@{'Enable Storage Sense (automatic weekly cleanup)'='Disable Storage Sense auto cleanup';'Disable Storage Sense auto cleanup'='Enable Storage Sense (automatic weekly cleanup)'}
-function AddT($sec,$name,$desc,$risk,$prof,$acts,$rec,$m,[switch]$split){$script:db+=fTw $sec $name $desc $risk $sd Any $prof $acts $rec;$script:more[$name]=$m;if($split){$script:splitOK+=$name}}
+function AddT($sec,$name,$desc,$risk,$prof,$acts,$rec,$m,[switch]$split,$when=$true){if(-not $when){return};$script:db+=fTw $sec $name $desc $risk $sd Any $prof $acts $rec;$script:more[$name]=$m;if($split){$script:splitOK+=$name}}
 
-AddT $s21 'VS Code: turn off telemetry, feedback prompts & experiments' 'Sets three documented settings in your VS Code user settings.json in place (comments and formatting are kept; a .debloathub.bak copy is made the first time): telemetry.telemetryLevel = off, telemetry.feedback.enabled = false, workbench.enableExperiments = false.' Safe 'safe,privacy,telemetry' @((fJson $VSC 'telemetry.telemetryLevel' 'off' $null),(fJson $VSC 'telemetry.feedback.enabled' $false $null),(fJson $VSC 'workbench.enableExperiments' $false $null)) 'Your settings.json is edited in place: comments, trailing commas and layout stay. Extensions may still send their own telemetry. Does nothing if VS Code has never been started on this account.' @('Needed only if you want to help Microsoft improve VS Code or get early features.','No usage data, error or crash reports to Microsoft; no survey or issue-reporter prompts.','New features may reach you later because VS Code rolls them out through experiments.') -split
-AddT $s21 'VS Code: stop background lookups (npm, JSON schemas, type downloads)' 'Stops VS Code fetching package info, JSON schemas and TypeScript types from the internet automatically.' Moderate '' @((fJson $VSC 'npm.fetchOnlinePackageInfo' $false $null),(fJson $VSC 'json.schemaDownload.enable' $false $null),(fJson $VSC 'typescript.disableAutomaticTypeAcquisition' $true $null)) 'Pick only what you can live without: JSON validation for package.json and similar may lose autocomplete, and JS projects get fewer automatic type hints.' @('Skip if you rely on hover info for npm packages or schema-based JSON validation.','Fewer outgoing requests while you edit; works better offline.','Less autocomplete and validation help in JSON and JavaScript files.') -split
-AddT $s21 'Visual Studio: turn off telemetry (Customer Experience Improvement Program)' 'Applies the Microsoft-documented Group Policy value HKLM\SOFTWARE\Policies\Microsoft\VisualStudio\SQM\OptIn = 0, which overrides the per-version setting in every installed Visual Studio.' Safe 'safe,privacy,telemetry' @(fReg 'HKLM:\SOFTWARE\Policies\Microsoft\VisualStudio\SQM' OptIn 0 $null) '' @('Needed only if you want to help improve Visual Studio.','No usage telemetry from Visual Studio.','Visual Studio shows its privacy setting as managed by policy.')
+AddT $s21 'VS Code: turn off telemetry, feedback prompts & experiments' 'Sets three documented settings in your VS Code user settings.json in place (comments and formatting are kept; a .debloathub.bak copy is made the first time): telemetry.telemetryLevel = off, telemetry.feedback.enabled = false, workbench.enableExperiments = false.' Safe 'safe,privacy,telemetry' @((fJson $VSC 'telemetry.telemetryLevel' 'off' $null),(fJson $VSC 'telemetry.feedback.enabled' $false $null),(fJson $VSC 'workbench.enableExperiments' $false $null)) 'Your settings.json is edited in place: comments, trailing commas and layout stay. Extensions may still send their own telemetry. Does nothing if VS Code has never been started on this account.' @('Needed only if you want to help Microsoft improve VS Code or get early features.','No usage data, error or crash reports to Microsoft; no survey or issue-reporter prompts.','New features may reach you later because VS Code rolls them out through experiments.') -split -when (Test-Path -LiteralPath (Split-Path $VSC))
+AddT $s21 'VS Code: stop background lookups (npm, JSON schemas, type downloads)' 'Stops VS Code fetching package info, JSON schemas and TypeScript types from the internet automatically.' Moderate '' @((fJson $VSC 'npm.fetchOnlinePackageInfo' $false $null),(fJson $VSC 'json.schemaDownload.enable' $false $null),(fJson $VSC 'typescript.disableAutomaticTypeAcquisition' $true $null)) 'Pick only what you can live without: JSON validation for package.json and similar may lose autocomplete, and JS projects get fewer automatic type hints.' @('Skip if you rely on hover info for npm packages or schema-based JSON validation.','Fewer outgoing requests while you edit; works better offline.','Less autocomplete and validation help in JSON and JavaScript files.') -split -when (Test-Path -LiteralPath (Split-Path $VSC))
+AddT $s21 'Visual Studio: turn off telemetry (Customer Experience Improvement Program)' 'Applies the Microsoft-documented Group Policy value HKLM\SOFTWARE\Policies\Microsoft\VisualStudio\SQM\OptIn = 0, which overrides the per-version setting in every installed Visual Studio.' Safe 'safe,privacy,telemetry' @(fReg 'HKLM:\SOFTWARE\Policies\Microsoft\VisualStudio\SQM' OptIn 0 $null) '' @('Needed only if you want to help improve Visual Studio.','No usage telemetry from Visual Studio.','Visual Studio shows its privacy setting as managed by policy.') -when $haveVS
 AddT $s21 'Developer CLIs: turn off telemetry (.NET, PowerShell 7, Next.js, Nuxt, Astro, Gatsby, Angular, Storybook, Turborepo, vcpkg, Terraform/Prisma, AWS SAM, Azure CLI, DO_NOT_TRACK)' 'Sets per-user environment variables that tell common developer tools not to send usage data. POWERSHELL_TELEMETRY_OPTOUT only affects PowerShell 7+, not Windows PowerShell 5.1. Angular only collects usage data if you opted in; NG_CLI_ANALYTICS=false makes sure of it. For Storybook the environment variable is the only switch that also stops the event sent before main.ts is read.' Safe 'safe,privacy,telemetry' (@('DOTNET_CLI_TELEMETRY_OPTOUT','POWERSHELL_TELEMETRY_OPTOUT','NEXT_TELEMETRY_DISABLED','NUXT_TELEMETRY_DISABLED','ASTRO_TELEMETRY_DISABLED','GATSBY_TELEMETRY_DISABLED','STORYBOOK_DISABLE_TELEMETRY','TURBO_TELEMETRY_DISABLED','VCPKG_DISABLE_METRICS','CHECKPOINT_DISABLE','DO_NOT_TRACK'|ForEach-Object{fReg 'HKCU:\Environment' $_ '1' $null String})+@((fReg 'HKCU:\Environment' NG_CLI_ANALYTICS 'false' $null String),(fReg 'HKCU:\Environment' SAM_CLI_TELEMETRY '0' $null String),(fReg 'HKCU:\Environment' AZURE_CORE_COLLECT_TELEMETRY '0' $null String))) 'Takes effect in new terminals after you sign out and back in. Choose individually to keep any you do not mind.' @('Needed only if you want to share anonymous usage data with these tools.','Fewer outgoing connections from your dev tools.','None; these only turn telemetry off.') -split
 
-AddT $s22 'Edge: turn off diagnostic data, personalization & feedback' 'Edge policies: DiagnosticData Off (Edge 122+), no personalization reporting, no user feedback, no recommendations. The older MetricsReportingEnabled and SendSiteInfoToImproveServices policies are obsolete since Edge 88 and are no longer written.' Safe 'safe,privacy,telemetry' @((fReg $EP DiagnosticData 0 $null),(fReg $EP PersonalizationReportingEnabled 0 $null),(fReg $EP UserFeedbackAllowed 0 $null),(fReg $EP ShowRecommendationsEnabled 0 $null)) 'Edge will say it is managed by your organization; that is just these policies. Edge before version 122 ignores DiagnosticData and follows the Windows diagnostic-data level (see Disable telemetry & diagnostic services).' @('Not needed unless you want to help Microsoft improve Edge.','Less data sent from Edge; fewer recommendations.','Edge shows the "managed" notice and has no feedback button. Microsoft marks DiagnosticData Off as "not recommended" because required diagnostics also stop.') -split
-AddT $s22 'Edge: harden browsing (Do Not Track, no third-party cookies, no prediction)' 'Sends Do Not Track, blocks third-party cookies and stops network prefetching.' Moderate '' @((fReg $EP ConfigureDoNotTrack 1 $null),(fReg $EP BlockThirdPartyCookies 1 $null),(fReg $EP NetworkPredictionOptions 2 $null)) 'Blocking third-party cookies can break some logins and embedded content. Choose individually.' @('Skip if you use sites that rely on third-party sign-in or embedded widgets.','Less cross-site tracking and fewer speculative connections.','Some logins, video embeds and payment widgets may stop working; pages may load a touch slower.') -split
-AddT $s22 'Chrome: turn off metrics, reports & Privacy Sandbox ad tracking' 'Chrome policy switches for usage metrics, user feedback, extended Safe Browsing reports, URL data collection and Privacy Sandbox ad topics.' Safe 'safe,privacy,telemetry' @((fReg $CP MetricsReportingEnabled 0 $null),(fReg $CP UserFeedbackAllowed 0 $null),(fReg $CP SafeBrowsingExtendedReportingEnabled 0 $null),(fReg $CP UrlKeyedAnonymizedDataCollectionEnabled 0 $null),(fReg $CP PrivacySandboxPromptEnabled 0 $null),(fReg $CP PrivacySandboxAdTopicsEnabled 0 $null),(fReg $CP PrivacySandboxAdMeasurementEnabled 0 $null),(fReg $CP PrivacySandboxSiteEnabledAdsEnabled 0 $null)) 'Chrome will say it is managed by your organization. Normal Safe Browsing protection stays on. Open chrome://policy to confirm which of these your Chrome version applies.' @('Not needed unless you want to share usage data with Google.','Less data to Google; no ad-topic profiling.','Chrome shows the "managed" notice; ads become less relevant.') -split
-AddT $s22 'Chrome: harden browsing (no third-party cookies, no prediction, no background mode)' 'Blocks third-party cookies, stops network prefetching and stops Chrome running after you close it.' Moderate '' @((fReg $CP BlockThirdPartyCookies 1 $null),(fReg $CP NetworkPredictionOptions 2 $null),(fReg $CP BackgroundModeEnabled 0 $null)) 'Choose individually; background mode off also saves RAM.' @('Skip if you rely on third-party sign-in widgets or Chrome notifications while closed.','Less tracking, fewer speculative connections, less RAM.','Some logins and embeds may break; no Chrome notifications while it is closed.') -split
-AddT $s22 'Firefox: turn off telemetry, studies, Pocket & feedback' 'Firefox policies: DisableTelemetry, DisableFirefoxStudies, DisableFeedbackCommands, DisableDefaultBrowserAgent (Windows) and DisablePocket (deprecated in current Firefox, harmless).' Safe 'safe,privacy,telemetry' @((fReg $FP DisableTelemetry 1 $null),(fReg $FP DisableFirefoxStudies 1 $null),(fReg $FP DisablePocket 1 $null),(fReg $FP DisableFeedbackCommands 1 $null),(fReg $FP DisableDefaultBrowserAgent 1 $null)) 'Firefox will say it is managed by your organization.' @('Not needed unless you want to help Mozilla.','No telemetry, experiments or default-browser reports to Mozilla.','Firefox shows the "managed" notice; Pocket (where still present) is unavailable.') -split
+AddT $s22 'Edge: turn off diagnostic data, personalization & feedback' 'Edge policies: DiagnosticData Off (Edge 122+), no personalization reporting, no user feedback, no recommendations. The older MetricsReportingEnabled and SendSiteInfoToImproveServices policies are obsolete since Edge 88 and are no longer written.' Safe 'safe,privacy,telemetry' @((fReg $EP DiagnosticData 0 $null),(fReg $EP PersonalizationReportingEnabled 0 $null),(fReg $EP UserFeedbackAllowed 0 $null),(fReg $EP ShowRecommendationsEnabled 0 $null)) 'Edge will say it is managed by your organization; that is just these policies. Edge before version 122 ignores DiagnosticData and follows the Windows diagnostic-data level (see Disable telemetry & diagnostic services).' @('Not needed unless you want to help Microsoft improve Edge.','Less data sent from Edge; fewer recommendations.','Edge shows the "managed" notice and has no feedback button. Microsoft marks DiagnosticData Off as "not recommended" because required diagnostics also stop.') -split -when $haveEdge
+AddT $s22 'Edge: harden browsing (Do Not Track, no third-party cookies, no prediction)' 'Sends Do Not Track, blocks third-party cookies and stops network prefetching.' Moderate '' @((fReg $EP ConfigureDoNotTrack 1 $null),(fReg $EP BlockThirdPartyCookies 1 $null),(fReg $EP NetworkPredictionOptions 2 $null)) 'Blocking third-party cookies can break some logins and embedded content. Choose individually.' @('Skip if you use sites that rely on third-party sign-in or embedded widgets.','Less cross-site tracking and fewer speculative connections.','Some logins, video embeds and payment widgets may stop working; pages may load a touch slower.') -split -when $haveEdge
+AddT $s22 'Edge: no Microsoft Rewards or MSN news feed' 'Turns off Microsoft Rewards (points, offers and the Rewards button) and the MSN news and ads feed on the new tab page, which then shows only your quick links and background (policies ShowMicrosoftRewards = 0, NewTabPageContentEnabled = 0).' Safe 'privacy' @((fReg $EP ShowMicrosoftRewards 0 $null),(fReg $EP NewTabPageContentEnabled 0 $null)) 'Recommended if Edge is installed, used or not. Edge shows "managed by your organization".' @('Use it unless you collect Microsoft Rewards points or read the MSN feed on the new tab page.','A calm new tab page without news, ads and trending stories; fewer requests to MSN every time you open a tab.','No Rewards points or offers; the new tab page content setting is locked to "off".') -split -when $haveEdge
+AddT $s22 'Edge: put background tabs to sleep sooner' 'Makes sure sleeping tabs stay on and puts inactive tabs to sleep after 5 minutes instead of 15 (SleepingTabsEnabled, SleepingTabsTimeout = 300). Optional: efficiency mode always available (EfficiencyModeEnabled); on PCs without a battery it is then always active.' Safe 'gaming' @((fReg $EP SleepingTabsEnabled 1 $null),(fReg $EP SleepingTabsTimeout 300 $null),(fReg $EP EfficiencyModeEnabled 1 $null)) 'For people who keep many Edge tabs open, e.g. while gaming. Choose individually: efficiency mode on a desktop is always on and can make busy pages feel slightly less smooth.' @('Use it if Edge uses a lot of RAM because you keep many tabs open.','Background tabs free their memory and CPU after 5 minutes; less RAM pressure while gaming or working.','A sleeping tab reloads its content when you return to it (a short delay; unsent form text is usually kept). Efficiency mode can lower animation smoothness.') -split -when $haveEdge
+AddT $s22 'Chrome: turn off metrics, reports & Privacy Sandbox ad tracking' 'Chrome policy switches for usage metrics, user feedback, extended Safe Browsing reports, URL data collection and Privacy Sandbox ad topics.' Safe 'safe,privacy,telemetry' @((fReg $CP MetricsReportingEnabled 0 $null),(fReg $CP UserFeedbackAllowed 0 $null),(fReg $CP SafeBrowsingExtendedReportingEnabled 0 $null),(fReg $CP UrlKeyedAnonymizedDataCollectionEnabled 0 $null),(fReg $CP PrivacySandboxPromptEnabled 0 $null),(fReg $CP PrivacySandboxAdTopicsEnabled 0 $null),(fReg $CP PrivacySandboxAdMeasurementEnabled 0 $null),(fReg $CP PrivacySandboxSiteEnabledAdsEnabled 0 $null)) 'Chrome will say it is managed by your organization. Normal Safe Browsing protection stays on. Open chrome://policy to confirm which of these your Chrome version applies.' @('Not needed unless you want to share usage data with Google.','Less data to Google; no ad-topic profiling.','Chrome shows the "managed" notice; ads become less relevant.') -split -when $haveChrome
+AddT $s22 'Chrome: harden browsing (no third-party cookies, no prediction, no background mode)' 'Blocks third-party cookies, stops network prefetching and stops Chrome running after you close it.' Moderate '' @((fReg $CP BlockThirdPartyCookies 1 $null),(fReg $CP NetworkPredictionOptions 2 $null),(fReg $CP BackgroundModeEnabled 0 $null)) 'Choose individually; background mode off also saves RAM.' @('Skip if you rely on third-party sign-in widgets or Chrome notifications while closed.','Less tracking, fewer speculative connections, less RAM.','Some logins and embeds may break; no Chrome notifications while it is closed.') -split -when $haveChrome
+AddT $s22 'Firefox: turn off telemetry, studies, Pocket & feedback' 'Firefox policies: DisableTelemetry, DisableFirefoxStudies, DisableFeedbackCommands, DisableDefaultBrowserAgent (Windows) and DisablePocket (deprecated in current Firefox, harmless).' Safe 'safe,privacy,telemetry' @((fReg $FP DisableTelemetry 1 $null),(fReg $FP DisableFirefoxStudies 1 $null),(fReg $FP DisablePocket 1 $null),(fReg $FP DisableFeedbackCommands 1 $null),(fReg $FP DisableDefaultBrowserAgent 1 $null)) 'Firefox will say it is managed by your organization.' @('Not needed unless you want to help Mozilla.','No telemetry, experiments or default-browser reports to Mozilla.','Firefox shows the "managed" notice; Pocket (where still present) is unavailable.') -split -when $haveFirefox
+AddT $s22 'Firefox: no sponsored shortcuts, stories, suggestions or feature ads' 'Firefox policies that remove sponsored shortcuts and sponsored stories from the home page, sponsored suggestions in the address bar, and recommendation pop-ups (extensions, features, "More from Mozilla"), and skip onboarding pages after updates.' Safe 'privacy' @((fReg "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\FirefoxHome" SponsoredTopSites 0 $null),(fReg "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\FirefoxHome" SponsoredStories 0 $null),(fReg "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\FirefoxSuggest" SponsoredSuggestions 0 $null),(fReg "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\FirefoxSuggest" ImproveSuggest 0 $null),(fReg "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\UserMessaging" ExtensionRecommendations 0 $null),(fReg "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\UserMessaging" FeatureRecommendations 0 $null),(fReg "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\UserMessaging" MoreFromMozilla 0 $null),(fReg "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\UserMessaging" SkipOnboarding 1 $null)) 'Recommended if you use Firefox. Firefox shows "managed by your organization".' @('Use it unless you like sponsored tiles and Mozilla''s feature tips.','No ads on the home page or in the address bar; what you type is not sent to improve Firefox Suggest; no "try this extension" pop-ups.','You also miss genuinely new-feature announcements; the home-page sponsored settings are controlled by policy.') -split -when $haveFirefox
+AddT $s22 'Firefox: update only while Firefox is open' 'Turns off the background update task that downloads and installs Firefox updates while Firefox is closed (policy BackgroundAppUpdate = 0). Firefox still updates itself while it runs.' Safe '' @(fReg "HKLM:\SOFTWARE\Policies\Mozilla\Firefox" BackgroundAppUpdate 0 $null) 'Recommended: Firefox stays up to date, it just does it while you use it.' @('Use it if you do not want a Firefox task waking up in the background while Firefox is closed.','One less scheduled background job; no surprise network and disk activity from Firefox when it is not running.','Updates arrive while you browse instead of beforehand, so after a long break the first Firefox start may show an update prompt.') -when $haveFirefox
 
 AddT $s23 'Disable AutoPlay/AutoRun for removable drives' 'Windows no longer runs or offers to run anything when you insert a USB stick, disc or memory card.' Safe 'safe' @(fReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' NoDriveTypeAutoRun 255 $null) '' @('Use it; you can still open drives in Explorer.','Blocks a classic way malware spreads through USB sticks; no pop-ups when you plug in a phone or card.','Discs and installers no longer start by themselves, and no "what do you want to do" prompt for photos and media.')
 AddT $s23 'Disable LLMNR (name-spoofing protection)' 'Turns off Link-Local Multicast Name Resolution, an old fallback that lets any device on the network answer "who is PC-NAME?". Attackers abuse it to capture your login hash.' Moderate '' @(fReg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient' EnableMulticast 0 $null) 'Fine on home networks with a normal router; skip on small peer-to-peer networks without DNS.' @('Use it on home networks with a normal router and on laptops that join public Wi-Fi.','Closes a common credential-stealing attack on public and office networks.','On small networks without a router or DNS, other PCs may not be found by name (use their IP address instead).')
@@ -485,7 +501,10 @@ if(Get-Service -Name 'NVDisplay.ContainerLocalSystem' -ErrorAction SilentlyConti
 # Only services that exist on this PC are listed. Disabling a service that is already Manual and not running changes nothing,
 # so the groups below are services that commonly RUN on home PCs (or start on a trigger) and that many people never need.
 $sSvc='Background Services'
-$haveSvc=@{};try{foreach($x in @(Get-Service -ErrorAction SilentlyContinue)){$haveSvc[$x.Name]=1}}catch{}
+$haveSvc=@{};$svcName=@{};try{foreach($x in @(Get-Service -ErrorAction SilentlyContinue)){$haveSvc[$x.Name]="$($x.StartType)";$svcName[$x.Name]=$x.DisplayName}}catch{}
+# Manual (default): "turn off" = start only when something asks for it (features keep working, nothing crashes on a refused start).
+# Strict: "turn off" = Disabled (never starts, even when asked). Changing the mode restarts DebloatHub because the actions are built here.
+$SvcStrict=$false;try{$SvcStrict=((Get-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name ServiceMode -ErrorAction Stop).ServiceMode -eq 'Strict')}catch{}
 $SVCINFO=[ordered]@{
  Spooler='Print Spooler: every printer and virtual printer (Microsoft Print to PDF, OneNote, PDF printers) needs it.'
  PrintNotify='Printer Extensions and Notifications: printer pop-ups, ink levels and vendor print dialogs.'
@@ -521,15 +540,33 @@ $SVCINFO=[ordered]@{
  edgeupdate='Edge Update: background Edge updates (Edge scheduled tasks also update it).'
 }
 foreach($k in @($SVCINFO.Keys)){$LBL[$k]=($SVCINFO[$k] -split ':')[0]}
-function SvcGroup($name,$desc,$risk,$items,$rec,$m){   # $items: @(service, 'D' = disable | 'M' = manual, fallback start type for undo)
- $acts=@(foreach($i in $items){if($haveSvc.ContainsKey($i[0])){if($i[1] -eq 'M'){fSvm $i[0] $i[2]}else{fSvc $i[0] $i[2]}}})
+# snapshot ids (defined early: SvcGroup needs Snap-Read while the tweak list is built)
+function Snap-Hash($k,$a){'S_'+([BitConverter]::ToString([Security.Cryptography.SHA1]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes("$k|$($a.P)|$($a.A)|$($a.N)"))).Replace('-','').Substring(0,20))}
+function Snap-Id($a){Snap-Hash $(if($a.K -eq 'SvcM'){'Svc'}else{$a.K}) $a}   # Disabled and Manual share ONE record: switching mode never loses the original start type
+function Snap-Ids($a){@(Snap-Id $a)+@(if($a.K -eq 'SvcM'){Snap-Hash 'SvcM' $a})}  # + ids written by v1.0.x
+function Snap-Read($a){foreach($id in (Snap-Ids $a)){$v=(Get-ItemProperty -Path 'HKLM:\SOFTWARE\DebloatHub\Snapshots' -Name $id -ErrorAction SilentlyContinue).$id;if($v){return ($v|ConvertFrom-Json)}}}
+function SvcGroup($name,$desc,$risk,$items,$rec,$m,[switch]$Fixed){
+ # $items: @(service, 'D' | 'M', fallback start type for undo). Names may contain * (e.g. GoogleUpdaterService*).
+ #   'D' = turn off: Manual in Manual mode, Disabled in Strict mode (or always Disabled with -Fixed)
+ #   'M' = always Manual (updaters, G-Helper's Armoury Crate list)
+ $acts=@();$skip=@()
+ foreach($i in $items){
+  $names=if($i[0] -like '*`**'){@($haveSvc.Keys|Where-Object{$_ -like $i[0]}|Sort-Object)}elseif($haveSvc.ContainsKey($i[0])){,$i[0]}else{@()}
+  foreach($n in $names){
+   if(-not $LBL.ContainsKey($n) -and $svcName[$n]){$LBL[$n]=$svcName[$n]}
+   if($i[1] -eq 'M'){$acts+=fSvm $n $i[2];continue}
+   if($Fixed -or $SvcStrict){$acts+=fSvc $n $i[2];continue}
+   $a=fSvm $n $i[2]                                                     # Manual mode: applied = not Automatic (Manual or Disabled)
+   if($haveSvc[$n] -in 'Manual','Disabled' -and -not(Snap-Read $a)){$skip+="$($LBL[$n])$(if($haveSvc[$n] -eq 'Disabled'){' (already Disabled)'})";continue}   # not Automatic and untouched by DebloatHub: nothing to do in Manual mode
+   $acts+=$a}}
+ if($skip.Count){$desc+=" Not listed because they already do not start at boot on this PC (Strict mode lists them): $($skip -join ', ')."}
  if(-not $acts.Count){return}
  $script:db+=fTw $sSvc $name $desc $risk $sd Any '' $acts $rec;$script:more[$name]=$m}
 
 SvcGroup 'Printing & scanning services' 'Turns off printing, fax and scanner services. Each service has its own switch: e.g. keep Print Spooler for printing and PDF, but turn off Fax.' Moderate @(@('Spooler','D','Automatic'),@('PrintNotify','D','Manual'),@('Fax','D','Manual'),@('stisvc','D','Manual')) 'Most home PCs never fax; many never print or scan. Keep Print Spooler if you print OR use "Microsoft Print to PDF".' @('Turn off what you never use: Fax for almost everyone, Spooler and WIA only if you never print, save to PDF or scan.','Print Spooler is one of the most attacked Windows services (PrintNightmare); fewer services start at boot.','Without Spooler: no printing and no Microsoft Print to PDF. Without WIA: scanners and Windows Scan stop working. Switch back on any time.')
 SvcGroup 'Xbox & Game Pass services' 'Turns off the Xbox sign-in, cloud-save, networking and accessory services. They start on demand when an Xbox-enabled game or app runs.' Moderate @(@('XblAuthManager','D','Manual'),@('XblGameSave','D','Manual'),@('XboxNetApiSvc','D','Manual'),@('XboxGipSvc','D','Manual')) 'Only if you play no Game Pass or Microsoft Store games. Steam, Epic and other launchers do not need them.' @('Use it if you do not play Game Pass or Microsoft Store games. Keep everything if you do.','Xbox components can no longer wake up in the background; fewer processes during gaming.','Game Pass and Store games cannot sign in, sync saves or join multiplayer. Xbox Accessories app and controller firmware updates stop.')
 SvcGroup 'Phone Link & cross-device services' 'Turns off the Phone Service, which handles calls through Phone Link. (Connected Devices Platform is a separate switch below because it breaks Night light.)' Moderate @(,@('PhoneSvc','D','Manual')) 'Only if you never make calls through Phone Link.' @('Use it if you do not make or take phone calls on this PC through Phone Link.','The phone-call service cannot start in the background.','Calls through Phone Link stop working; texts, photos and notifications in Phone Link are not affected.')
-SvcGroup 'Disable Connected Devices Platform (breaks Night light)' 'Disables the Connected Devices Platform service (CDPSvc). WARNING: Night light depends on it: after a reboot Night light cannot be turned on and Settings > Display can crash (SystemSettings.exe error 0x40000015). It also powers Phone Link, Nearby sharing and some cast/pairing features.' Advanced @(,@('CDPSvc','D','Automatic')) 'Do NOT use it if you use Night light. Only for PCs that never use Night light, Phone Link or Nearby sharing.' @('Only if you never use Night light, Phone Link, Nearby sharing or Share with nearby devices.','One busy background service is gone; some users see less CPU and battery use.','BREAKS Night light (cannot be switched on) and can crash Settings > Display; Phone Link and Nearby sharing stop. To fix: switch this off, Apply and reboot.')
+SvcGroup -Fixed 'Disable Connected Devices Platform (breaks Night light)' 'Disables the Connected Devices Platform service (CDPSvc). WARNING: Night light depends on it: after a reboot Night light cannot be turned on and Settings > Display can crash (SystemSettings.exe error 0x40000015). It also powers Phone Link, Nearby sharing and some cast/pairing features.' Advanced @(,@('CDPSvc','D','Automatic')) 'Do NOT use it if you use Night light. Only for PCs that never use Night light, Phone Link or Nearby sharing.' @('Only if you never use Night light, Phone Link, Nearby sharing or Share with nearby devices.','One busy background service is gone; some users see less CPU and battery use.','BREAKS Night light (cannot be switched on) and can crash Settings > Display; Phone Link and Nearby sharing stop. To fix: switch this off, Apply and reboot.')
 SvcGroup 'Windows Hello biometrics service' 'Turns off the Windows Biometric Service (fingerprint and face sign-in).' Moderate @(,@('WbioSrvc','D','Manual')) 'Only if you sign in with a PIN or password. Keep it if you use a fingerprint reader or IR face camera.' @('Use it on PCs without a fingerprint reader / IR camera, or if you never use them.','One less service; the biometric stack cannot wake up.','Fingerprint and face sign-in stop working; PIN and password still work.')
 SvcGroup 'Bluetooth services' 'Turns off Bluetooth support, hands-free audio and media-button services.' Advanced @(@('bthserv','D','Manual'),@('BTAGService','D','Manual'),@('BthAvctpSvc','D','Manual')) 'Only on PCs that never use Bluetooth. If you only skip headset calls, turn off just Bluetooth Audio Gateway.' @('Use it only if this PC never uses Bluetooth.','No Bluetooth background services or radio scanning.','ALL Bluetooth devices stop working (mice, keyboards, headphones, controllers), including ones already paired.')
 SvcGroup 'Network sharing & discovery services' 'Turns off sharing this PC''s files/printers and announcing or discovering devices on the local network. Opening shares on OTHER PCs or a NAS keeps working.' Moderate @(@('LanmanServer','D','Automatic'),@('FDResPub','D','Manual'),@('SSDPSRV','D','Manual'),@('upnphost','D','Manual')) 'Good for laptops on public Wi-Fi. Keep SSDP Discovery if you cast to a smart TV or use DLNA media servers.' @('Use it if you never share folders from this PC and do not cast to TVs or DLNA devices.','This PC is no longer advertised on the network; smaller attack surface on public Wi-Fi.','Other PCs cannot open this PC''s shared folders/printers; Cast to device and DLNA discovery may stop. Mapped drives to other PCs are not affected.')
@@ -538,12 +575,30 @@ SvcGroup 'IP Helper (IPv6 tunnelling)' 'Turns off IP Helper, which provides IPv6
 SvcGroup 'Diagnostics & troubleshooting services' 'Turns off problem detection, diagnostic hosts, the troubleshooter service and the Windows 11 inventory/compatibility service.' Advanced @(@('DPS','D','Automatic'),@('WdiServiceHost','D','Manual'),@('WdiSystemHost','D','Manual'),@('diagsvc','D','Manual'),@('InventorySvc','D','Manual')) 'Only for experienced users; switch it back on before you troubleshoot anything.' @('Use it if you never run Windows troubleshooters and want fewer background diagnostics.','Fewer background scans; stops the inventory service that feeds compatibility telemetry.','Troubleshooters and "Diagnose" for network problems stop working; Windows no longer detects and suggests fixes for problems.')
 $asusD='ArmouryCrateControlInterface','ArmouryCrateProArtService','AsHidService','ASUSOptimization','AsusAppService','ASUSLinkNear','ASUSLinkRemote','ASUSSoftwareManager','ASUSLiveUpdateAgent','ASUSSwitch','ASUSSystemAnalysis','ASUSSystemDiagnosis','ASUSXGMobileService','AsusCertService'
 $asusM='ArmouryCrateSEService','ArmouryCrateService','LightingService'
-SvcGroup 'ASUS services (replaced by G-Helper)' 'Turns off the ASUS background services that G-Helper replaces, exactly like G-Helper''s Extra > "Stop" button: MyASUS/Armoury Crate helpers are disabled, Armoury Crate and Aura lighting services are set to Manual. The touchpad service is never touched.' Moderate (@($asusD|ForEach-Object{,@($_,'D','Automatic')})+@($asusM|ForEach-Object{,@($_,'M','Automatic')})) 'Only if you use G-Helper instead of Armoury Crate / MyASUS. Pick individually to keep e.g. Live Update or Link to MyASUS.' @('Use it if G-Helper handles your performance modes, fans, GPU modes and hotkeys.','Often 5-15 fewer background processes and less RAM and CPU; no ASUS telemetry or update nags.','Armoury Crate, MyASUS, Aura lighting sync and ASUS Live Update stop working until switched back on. Without G-Helper running, some Fn hotkeys may stop working.')
+SvcGroup -Fixed 'ASUS services (replaced by G-Helper)' 'Turns off the ASUS background services that G-Helper replaces, exactly like G-Helper''s Extra > "Stop" button: MyASUS/Armoury Crate helpers are disabled, Armoury Crate and Aura lighting services are set to Manual. The touchpad service is never touched.' Moderate (@($asusD|ForEach-Object{,@($_,'D','Automatic')})+@($asusM|ForEach-Object{,@($_,'M','Automatic')})) 'Only if you use G-Helper instead of Armoury Crate / MyASUS. Pick individually to keep e.g. Live Update or Link to MyASUS.' @('Use it if G-Helper handles your performance modes, fans, GPU modes and hotkeys.','Often 5-15 fewer background processes and less RAM and CPU; no ASUS telemetry or update nags.','Armoury Crate, MyASUS, Aura lighting sync and ASUS Live Update stop working until switched back on. Without G-Helper running, some Fn hotkeys may stop working.')
 foreach($k in @('ArmouryCrateControlInterface','ArmouryCrateProArtService','AsHidService','ASUSOptimization','AsusAppService','ASUSLinkNear','ASUSLinkRemote','ASUSSoftwareManager','ASUSLiveUpdateAgent','ASUSSwitch','ASUSSystemAnalysis','ASUSSystemDiagnosis','ASUSXGMobileService','AsusCertService','ArmouryCrateSEService','ArmouryCrateService','LightingService')){if(-not $LBL.ContainsKey($k)){$LBL[$k]=$k}}
 
+SvcGroup -Fixed 'Third-party updaters & helpers: start on demand' 'Sets background updater and vendor telemetry services from Automatic to Manual: Google (Chrome) Update, Brave Update, Adobe Acrobat/Creative Cloud update and genuine-check services, Dropbox Update, HP Touchpoint Analytics and HP diagnostics, Dell SupportAssist, AMD User Experience Program and Crash Defender, Killer Analytics. Only services installed on this PC are listed.' Safe @(@('gupdate','M','Automatic'),@('GoogleUpdaterService*','M','Automatic'),@('GoogleUpdaterInternalService*','M','Automatic'),@('brave','M','Automatic'),@('AdobeARMservice','M','Automatic'),@('AdobeUpdateService','M','Automatic'),@('AGSService','M','Automatic'),@('AGMService','M','Automatic'),@('dbupdate','M','Automatic'),@('HpTouchpointAnalyticsService','M','Automatic'),@('HPDiagsCap','M','Automatic'),@('HPSysInfoCap','M','Automatic'),@('SupportAssistAgent','M','Automatic'),@('AUEPLauncher','M','Automatic'),@('AMD Crash Defender Service','M','Automatic'),@('KAPSService','M','Automatic')) 'Recommended: the apps still update through their own scheduled tasks or when you open them.' @('Use it if these services run all the time just to check for updates or collect usage data.','Fewer always-running processes at boot; less background network and disk activity.','Updates may arrive a little later (when the app or its scheduled task runs). Dell SupportAssist and HP Support Assistant may need a moment to start, or show "service not running" until you open them again.')
 # fewer svchost.exe processes: Windows gives each service its own svchost when RAM > this threshold (3.5 GB by default)
 $db+=fTw $sSvc 'Group services into fewer svchost processes' 'Raises SvcHostSplitThresholdInKB above any RAM size, so Windows groups related services into shared svchost.exe processes again, as it did before Windows 10 1703 (or on PCs with under 3.5 GB RAM). Reboot needed.' Moderate $sd Any '' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control' SvcHostSplitThresholdInKB 0x7FFFFFFF 3670016) 'Mostly cosmetic: it lowers the process count, not CPU use. Undo restores the original value (default 3.5 GB).'
 $more['Group services into fewer svchost processes']=@('Use it if the long list of "Service Host" processes bothers you or you want a lower process count. It does not make games or apps faster.','Often dozens fewer svchost.exe processes and a little less RAM overhead.','Less isolation: if one service crashes, the others in the same process restart with it; Task Manager can no longer show which single service in a group uses CPU. Some services always keep their own process.')
+
+# ---------- Gaming: Windows' own gaming switches + Memory Integrity ----------
+$dxK=Map-Hive 'HKCU:\Software\Microsoft\DirectX\UserGpuPreferences'
+$db+=fTw 'Performance & Gaming' 'Make sure Game Mode is on' 'Turns on Windows Game Mode (Settings > Gaming > Game Mode). It is on by default; this switch puts it back if something turned it off. Game Mode gives the game priority and pauses Windows Update installs and driver installs while you play.' Safe $sd Any 'gaming' @(fReg 'HKCU:\Software\Microsoft\GameBar' AutoGameModeEnabled 1 $null) 'Keep it on; there is no downside on modern Windows.'
+$more['Make sure Game Mode is on']=@('Everyone who plays games; it only acts while a game runs.','Fewer background interruptions (updates, driver installs) during games; slightly steadier frame times.','Practically none on current Windows versions.')
+$db+=fTw 'Performance & Gaming' 'Optimizations for windowed games (Windows 11)' 'Turns on Settings > System > Display > Graphics > "Optimizations for windowed games": older DirectX 10/11 games in windowed or borderless mode use the modern flip presentation model, which lowers input latency and enables Auto HDR and variable refresh rate there. Other graphics settings stored in the same value are kept.' Safe $sd 11 'gaming' @(fCmd ("Set-DxFlag '"+$dxK+"' SwapEffectUpgradeEnable 1") ("Set-DxFlag '"+$dxK+"' SwapEffectUpgradeEnable `$null") ("Test-DxFlag '"+$dxK+"' SwapEffectUpgradeEnable 1")) 'Recommended for gamers on Windows 11 (Microsoft''s own setting). Restart the game afterwards.'
+$more['Optimizations for windowed games (Windows 11)']=@('Use it if you play older DirectX 10/11 games in windowed or borderless mode.','Lower latency in windowed and borderless games; Auto HDR and variable refresh rate work there too.','A few very old games may show glitches; turn it off again if one does. DirectX 12 and fullscreen games are not affected.')
+$db+=fTw 'Performance & Gaming' 'Turn on hardware-accelerated GPU scheduling' 'Lets the GPU manage its own video memory scheduling (Settings > System > Display > Graphics > Default graphics settings). Required for DLSS Frame Generation on NVIDIA RTX 40/50 cards. Needs a supported GPU and driver (WDDM 2.7+); restart needed.' Safe $sd Any 'gaming' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' HwSchMode 2 $null) 'Turn it on if you use DLSS Frame Generation; otherwise test both, because the effect differs per PC and game (usually within a few percent either way).'
+$more['Turn on hardware-accelerated GPU scheduling']=@('Needed for DLSS 3/4 Frame Generation. Otherwise optional: measure your games with it on and off.','Slightly lower CPU overhead and latency on many systems; required by Frame Generation.','On some systems and older games it causes stutter or lower FPS; it does nothing on GPUs or drivers without support. Restart needed.')
+$db+=fTw 'Performance & Gaming' 'Turn off Memory Integrity (Core isolation)' 'Turns off Memory Integrity (Windows Security > Device security > Core isolation), the virtualization-based protection that stops malicious or vulnerable drivers from loading into the kernel. Some games gain a few percent FPS, mostly on older CPUs. Restart needed. If it is enforced by your organization or locked in UEFI, Windows turns it back on.' Advanced $sd Any 'gaming' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' Enabled 0 1) 'Only for gaming PCs where you control what you install. Leave it on for work PCs, laptops you travel with, and anyone who installs software from many sources.'
+$more['Turn off Memory Integrity (Core isolation)']=@('Only if you want the last few percent of FPS and accept weaker protection against malicious drivers. Check the System check above: it shows whether it is running at all.','Typically 0-10% more FPS in some games, more on older CPUs without fast virtualization support; slightly lower latency.','Kernel-level malware and vulnerable drivers become easier to abuse. Windows Security shows a warning. Some work or school PCs and a few anti-cheat or security tools require it. Restart needed.')
+if(-not $warnBy){$warnBy=@{}}
+$warnBy['Turn off Memory Integrity (Core isolation)']='this lowers protection against malicious drivers. Windows Security will show a warning, and some work PCs or anti-cheat tools require Memory Integrity. Restart needed.'
+
+# ---------- Windows 11 extra apps (each package is its own switch) ----------
+$db+=fTw $s2 'Remove Windows 11 extra apps' 'Uninstalls newer Windows 11 extras: Outlook (new), Mail and Calendar (old), Dev Home, Microsoft To Do, Microsoft Family, Quick Assist, Bing Search, Journal and Phone Link with its helper. Each app is its own switch.' Moderate $sd Any '' @('Microsoft.OutlookForWindows','microsoft.windowscommunicationsapps','Microsoft.Windows.DevHome','Microsoft.Todos','MicrosoftCorporationII.MicrosoftFamily','MicrosoftCorporationII.QuickAssist','Microsoft.BingSearch','Microsoft.MicrosoftJournal','Microsoft.YourPhone','MicrosoftWindows.CrossDevice'|ForEach-Object{fApp $_}) 'Pick only what you never use. Keep Quick Assist if someone helps you remotely, Phone Link if you connect your phone, and Outlook (new) if you read email in it.'
+$more['Remove Windows 11 extra apps']=@('Remove the ones you do not use; keep Quick Assist, Phone Link or Outlook if you rely on them.','Less clutter in Start; fewer apps updating and starting background tasks.','Removed apps must be reinstalled from the Microsoft Store (Quick Assist and Phone Link too). Apps not present on your Windows version are skipped.')
 
 # ---------- Memory (RAM) ----------
 $sMem='Memory (RAM)'
@@ -564,6 +619,29 @@ $db=@($db|ForEach-Object{$t=$_;$new=$t.Sec;$ord=0
  else{foreach($g in $gk){$j=[array]::IndexOf(@($grp[$g]),$t.Sec);if($j -ge 0){$new=$g;$ord=$j;break}}}
  $t.Sec=$new;[pscustomobject]@{T=$t;G=[array]::IndexOf($gk,$new);O=$ord;I=$ix};$ix++}|Sort-Object G,O,I|ForEach-Object{$_.T})
 $secs=@($gk|Where-Object{$g=$_;@($db|Where-Object{$_.Sec -eq $g}).Count})
+
+# ---------- Recommended preset: one explicit, reviewable list ----------
+# Rules: (1) a performance or privacy win, (2) nothing a typical user relies on stops working, (3) undoable with one click
+# (so no app removals and no one-time cleanups). Whole tweak = its name; a single sub-switch = 'Tweak name|Sub-switch label'.
+$RECOMMENDED=@(
+ 'Disable telemetry & diagnostic services','Disable telemetry scheduled tasks','Disable app-compatibility telemetry (Inventory Collector, Steps Recorder)'
+ 'Disable NVIDIA telemetry (telemetry container, NvTm* tasks, opt-in flag)','Disable Office telemetry (diagnostic data "Neither", legacy Telemetry Agent)'
+ 'Disable advertising ID','Disable Activity History','Disable tailored experiences','Disable web results in Start search','Disable Customer Experience Improvement Program','Disable feedback prompts'
+ 'Disable Windows Recall / AI data analysis','Disable Click to Do','Disable Copilot'
+ 'Disable Edge startup boost & background mode','Quiet Edge: no sidebar, shopping assistant or first-run','Edge: turn off diagnostic data, personalization & feedback'
+ 'Chrome: turn off metrics, reports & Privacy Sandbox ad tracking','Firefox: turn off telemetry, studies, Pocket & feedback'
+ 'Edge: no Microsoft Rewards or MSN news feed','Firefox: no sponsored shortcuts, stories, suggestions or feature ads','Firefox: update only while Firefox is open'
+ 'VS Code: turn off telemetry, feedback prompts & experiments','Visual Studio: turn off telemetry (Customer Experience Improvement Program)'
+ 'Developer CLIs: turn off telemetry (.NET, PowerShell 7, Next.js, Nuxt, Astro, Gatsby, Angular, Storybook, Turborepo, vcpkg, Terraform/Prisma, AWS SAM, Azure CLI, DO_NOT_TRACK)'
+ 'Disable Start/Settings suggestions & silent app installs','Disable lock screen tips & ads','Disable Widgets','Disable News and Interests','Disable search highlights','Show file extensions'
+ 'Disable Game DVR / background capture','Stop NVIDIA services while the dGPU is off (G-Helper Eco)'
+ 'Set rarely-used services to start on demand','Third-party updaters & helpers: start on demand'
+ 'Disable Delivery Optimization (P2P uploads)','Disable device metadata downloads','Disable AutoPlay/AutoRun for removable drives','Disable Remote Assistance'
+)+$vfxRec
+function Is-Rec($u){($RECOMMENDED -contains $u.T.Name) -or ($RECOMMENDED -contains $u.Key)}
+# Simple view "Debloat + Gaming" = Recommended + these (all undoable, nothing laptop-unfriendly like Ultimate Performance)
+$SIMPLE_GAMING=@('Make sure Game Mode is on','Optimizations for windowed games (Windows 11)','Disable mouse acceleration','Disable Sticky Keys prompt','Disable Game Bar','Disable Game DVR / background capture','Edge: put background tabs to sleep sooner|SleepingTabsEnabled','Edge: put background tabs to sleep sooner|SleepingTabsTimeout')
+function Is-RecT($t){($RECOMMENDED -contains $t.Name) -or @($RECOMMENDED|Where-Object{$_.StartsWith("$($t.Name)|",[StringComparison]::Ordinal)}).Count}
 
 # ---------- Engine ----------
 function Show-Act($a){switch($a.K){
@@ -605,10 +683,8 @@ function Do-Act($a,$undo){switch($a.K){
 
 # ---------- Original-state snapshots: Apply records what was there BEFORE the change, Undo puts exactly that back ----------
 function Safe-Test($a){try{Test-Act $a}catch{$null}}
-function Snap-Id($a){'S_'+([BitConverter]::ToString([Security.Cryptography.SHA1]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes("$($a.K)|$($a.P)|$($a.A)|$($a.N)"))).Replace('-','').Substring(0,20))}
-function Snap-Read($a){$id=Snap-Id $a;$v=(Get-ItemProperty -Path 'HKLM:\SOFTWARE\DebloatHub\Snapshots' -Name $id -ErrorAction SilentlyContinue).$id;if($v){$v|ConvertFrom-Json}}
 function Snap-Write($a,$o){$k='HKLM:\SOFTWARE\DebloatHub\Snapshots';if(-not(Test-Path $k)){New-Item $k -Force|Out-Null};New-ItemProperty -Path $k -Name (Snap-Id $a) -Value ($o|ConvertTo-Json -Compress -Depth 20) -PropertyType String -Force|Out-Null}
-function Snap-Clear($a){Remove-ItemProperty -Path 'HKLM:\SOFTWARE\DebloatHub\Snapshots' -Name (Snap-Id $a) -ErrorAction SilentlyContinue}
+function Snap-Clear($a){foreach($id in (Snap-Ids $a)){Remove-ItemProperty -Path 'HKLM:\SOFTWARE\DebloatHub\Snapshots' -Name $id -ErrorAction SilentlyContinue}}
 function Snap-Capture($a){switch($a.K){          # what is on the system right now (pure data); $null = this kind has no snapshot
  'Reg'{$k=Get-Item -LiteralPath $a.P -ErrorAction SilentlyContinue
    if($k -and ($k.GetValueNames() -contains $a.N)){$kind=$k.GetValueKind($a.N).ToString();$v=$k.GetValue($a.N,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
@@ -627,7 +703,7 @@ function Snap-Capture($a){switch($a.K){          # what is on the system right n
  default{$null}}}
 function Snap-Take($a,$before){                  # $before = Test-Act result BEFORE the change
  if($a.K -in 'App','Cmd'){return}
- if($before -eq $false -or ($null -eq $before -and -not(Snap-Read $a))){      # only when we are looking at the genuine original; never overwrite it with an already-applied state
+ if($before -ne $true -and -not(Snap-Read $a)){      # record only the genuine original: never overwrite an existing record (it is cleared on undo)
   try{$c=Snap-Capture $a;if($null -ne $c){Snap-Write $a $c}}catch{Log "   (could not record the original of this setting: $($_.Exception.Message))"}}}
 function Snap-Restore($a,$s){switch($a.K){
  'Reg'{if($s.exists){$v=$s.value
@@ -697,6 +773,56 @@ function Remove-NvEcoTask{
  $global:LASTEXITCODE=0}
 function Test-NvEcoTask{[bool](Get-ScheduledTask -TaskPath '\DebloatHub\' -TaskName 'Stop NVIDIA services while dGPU is off' -ErrorAction SilentlyContinue)}
 
+# ---------- DirectX per-user flags ("SwapEffectUpgradeEnable=1;VRROptimizeEnable=0;") ----------
+# Several Settings toggles share ONE string, so change only our flag and keep the others exactly as they are.
+function Set-DxFlag($k,$name,$val){              # $val = $null removes the flag (= Windows default)
+ $cur=(Get-ItemProperty -LiteralPath $k -Name DirectXUserGlobalSettings -ErrorAction SilentlyContinue).DirectXUserGlobalSettings
+ $parts=[ordered]@{};foreach($x in ("$cur" -split ';')){if($x -match '^\s*([^=]+?)\s*=(.*)$'){$parts[$Matches[1]]=$Matches[2]}}
+ if($null -eq $val){$parts.Remove($name)}else{$parts[$name]="$val"}
+ $new=(@($parts.Keys|ForEach-Object{"$_=$($parts[$_])"}) -join ';');if($new){$new+=';'}
+ if(-not(Test-Path -LiteralPath $k)){New-Item -Path $k -Force|Out-Null}
+ if($new){New-ItemProperty -LiteralPath $k -Name DirectXUserGlobalSettings -Value $new -PropertyType String -Force|Out-Null}
+ else{Remove-ItemProperty -LiteralPath $k -Name DirectXUserGlobalSettings -ErrorAction SilentlyContinue}
+ $global:LASTEXITCODE=0}
+function Test-DxFlag($k,$name,$val){$cur=(Get-ItemProperty -LiteralPath $k -Name DirectXUserGlobalSettings -ErrorAction SilentlyContinue).DirectXUserGlobalSettings
+ [bool]("$cur" -match "(^|;)\s*$([regex]::Escape($name))\s*=\s*$([regex]::Escape("$val"))\s*(;|$)")}
+
+# ---------- System check (read-only): things DebloatHub cannot change but that matter more than most tweaks ----------
+# Runs inside the scan job; returns plain hashtables @{L=label; S='ok'|'tip'|'info'; T=text}.
+function Get-SysCheck{
+ $out=@()
+ $laptop=$false;try{$laptop=[bool](@((Get-CimInstance Win32_SystemEnclosure -ErrorAction Stop).ChassisTypes)|Where-Object{$_ -in 8,9,10,11,12,14,18,21,30,31,32})}catch{}
+ try{foreach($v in @(Get-CimInstance Win32_VideoController -ErrorAction Stop)){
+   $n=[string]$v.Name
+   if($n -match 'Basic Display|Basic Render'){$out+=@{L='GPU';S='tip';T="${n}: no graphics driver is installed. Install it from the GPU or laptop maker (NVIDIA, AMD, Intel, ASUS...)."};continue}
+   $d=$v.DriverDate;$age=$(if($d){[int]((Get-Date)-[datetime]$d).TotalDays}else{-1})
+   $t="$n - driver $($v.DriverVersion)$(if($d){' from '+([datetime]$d).ToString('yyyy-MM-dd')})"
+   if($age -gt 180 -and $n -match 'NVIDIA|AMD|Radeon|Intel|Arc'){$out+=@{L='GPU';S='tip';T="$t. Over 6 months old: newer drivers often fix stutter and add game-specific fixes. Get it from NVIDIA / AMD / Intel (on laptops also the laptop maker's site)."}}
+   else{$out+=@{L='GPU';S='ok';T=$t}}
+   $cur=[int]$v.CurrentRefreshRate;$max=[int]$v.MaxRefreshRate
+   if($cur -gt 0 -and $v.CurrentHorizontalResolution){
+    if($max -gt $cur+5 -and $cur -le 75){$out+=@{L='Display';S='tip';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz, while up to $max Hz is reported. If your screen supports more: Settings > System > Display > Advanced display > Choose a refresh rate. This is one of the most noticeable upgrades for games."}}
+    else{$out+=@{L='Display';S='info';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz"}}}}}catch{}
+ try{$m=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction Stop)
+  if($m.Count){
+   $gb=[math]::Round((($m|Measure-Object Capacity -Sum).Sum)/1GB)
+   $cfg=[int](($m|Where-Object{$_.ConfiguredClockSpeed}|Measure-Object ConfiguredClockSpeed -Minimum).Minimum)
+   $rated=[int](($m|Measure-Object Speed -Maximum).Maximum)
+   $type=switch([int]@($m)[0].SMBIOSMemoryType){26{'DDR4'}34{'DDR5'}35{'LPDDR5'}30{'LPDDR4'}default{''}}
+   $pn=(@($m|ForEach-Object{("$($_.Manufacturer) $($_.PartNumber)").Trim()}|Where-Object{$_}|Select-Object -Unique) -join ', ')
+   $t="$gb GB $type at $cfg MT/s, $($m.Count) module(s)$(if($pn){" ($pn)"})"
+   $base=($type -eq 'DDR4' -and $cfg -le 2400) -or ($type -eq 'DDR5' -and $cfg -le 4800)
+   if($rated -gt $cfg+50){$out+=@{L='RAM';S='tip';T="$t. The modules report $rated MT/s but run slower. $(if($laptop){'On laptops the maker usually fixes the speed.'}else{'Enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS.'})"}}
+   elseif($base -and -not $laptop){$out+=@{L='RAM';S='tip';T="$t. That is the safe default (JEDEC) speed. If your RAM is rated faster (search the part number), enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS: often a 10-20% gain in CPU-heavy games, especially on Ryzen."}}
+   else{$out+=@{L='RAM';S='ok';T=$t}}
+   if($gb -lt 8){$out+=@{L='RAM';S='tip';T="Only $gb GB of RAM: more memory is the single biggest upgrade for this PC."}}
+   if($m.Count -eq 1 -and -not $laptop){$out+=@{L='RAM';S='tip';T='One memory module = single channel. Two matching modules (dual channel) can raise FPS noticeably on integrated and CPU-limited systems.'}}}}catch{}
+ try{$dg=Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard -ErrorAction Stop
+  if(@($dg.SecurityServicesRunning) -contains 2){$out+=@{L='Security';S='info';T='Memory Integrity (Core isolation) is running. It protects against malicious drivers and costs a few percent of FPS in some games; see "Turn off Memory Integrity" under Performance & Gaming.'}}}catch{}
+ try{$hs=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' -Name HwSchMode -ErrorAction Stop).HwSchMode
+  $out+=@{L='GPU scheduling';S='info';T="Hardware-accelerated GPU scheduling is $(if($hs -eq 2){'on'}elseif($hs -eq 1){'off'}else{'left to the driver'})."}}catch{}
+ ,$out}
+
 # ---------- Standby memory flush (run-once): same as RAMMap "Empty Standby List", done with the native API ----------
 function Clear-StandbyList{
  $f0=[long](Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory                 # KB
@@ -727,7 +853,7 @@ function Clean-DriverStore{
  Log ('   Driver Store cleanup: {0} package(s) deleted, about {1:N0} MB freed, {2} kept on purpose, {3} failed.' -f $ok,($bytes/1MB),$keep.Count,$fail.Count)
  if($fail.Count){throw "some packages could not be deleted: $($fail -join ', ')"}}
 
-function Log($m){$log.AppendText("$m`r`n");$log.ScrollToEnd();$w.Dispatcher.Invoke([Action]{},[Windows.Threading.DispatcherPriority]::Background)}
+function Log($m){$log.AppendText("$m`r`n");$log.ScrollToEnd();if($slog){$slog.AppendText("$m`r`n");$slog.ScrollToEnd()};$w.Dispatcher.Invoke([Action]{},[Windows.Threading.DispatcherPriority]::Background)}
 
 function Fits($t){(($t.Win -eq 'Any') -or ($t.Win -eq '11' -and $W11) -or ($t.Win -eq '10' -and -not $W11)) -and -not($OtherUser -and @($t.Acts|Where-Object{$_.K -eq 'Spi'}).Count)}
 function Undoable($t){-not @($t.Acts|Where-Object{$_.K -eq 'App' -or ($_.K -eq 'Cmd' -and -not $_.U)}).Count}
@@ -738,7 +864,8 @@ function Act-Label($a){switch($a.K){
  default{if(-not $a.N){'one-time command'}elseif($LBL.ContainsKey($a.N)){$LBL[$a.N]}elseif($a.K -eq 'Reg' -and $a.N -eq 'Value'){Split-Path $a.P -Leaf}else{$a.N}}}}
 
 # ---------- Apply / revert engine (works on "units": one switch each) ----------
-$warnBy=@{'Disable Connected Devices Platform (breaks Night light)'='Night light stops working and Settings > Display can crash until this is switched back off and the PC rebooted.'
+if(-not $warnBy){$warnBy=@{}}
+$warnBy+=@{'Disable Connected Devices Platform (breaks Night light)'='Night light stops working and Settings > Display can crash until this is switched back off and the PC rebooted.'
  'Use Cloudflare DNS (1.1.1.1)'='local network shares (NAS) and hotel or airport Wi-Fi sign-in pages may stop working.'
  'Remove Xbox apps'='Do not run if you use Xbox Game Pass, PC cloud saves, or Win+G Game Bar.'
  'Disable Xbox cloud-save task'='Do not run if you use Xbox Game Pass, PC cloud saves, or Win+G Game Bar.'
@@ -832,7 +959,7 @@ function Update-Bar{$n=0;$pt=@{}
  $bApply.IsEnabled=($n -gt 0);$bApply.Content=if($n){"Apply $n change$(if($n -ne 1){'s'})"}else{'No changes'}}
 # ---------- Background jobs: the window stays usable while scans and applies run ----------
 $script:busy=$false;$script:job=$null;$script:res=$null
-function Show-Load($m){$ld.BeginAnimation([Windows.UIElement]::OpacityProperty,$null);$ld.Opacity=1;$ld.Visibility='Visible';$ldText.Text=$m}
+function Show-Load($m){$ld.BeginAnimation([Windows.UIElement]::OpacityProperty,$null);$ld.Opacity=1;$ld.Visibility='Visible';$ldText.Text=$m;if($sStatus){$sStatus.Text=$m};if($simpleView){Update-Simple}}
 function Hide-Load{$an=New-Object Windows.Media.Animation.DoubleAnimation;$an.From=1;$an.To=0;$an.Duration=[Windows.Duration]::new([TimeSpan]::FromMilliseconds(250));$an.Add_Completed({$ld.Visibility='Collapsed'});$ld.BeginAnimation([Windows.UIElement]::OpacityProperty,$an)}
 $PRE=@'
 $ErrorActionPreference='Stop'
@@ -842,7 +969,7 @@ function Log($m){[void]$sync.Q.Enqueue("$m")}
 function Get-FnText($n){$c=Get-Command $n -CommandType Function;$a=$c.ScriptBlock.Ast
  if($a -isnot [Management.Automation.Language.FunctionDefinitionAst] -and $a.Parent -is [Management.Automation.Language.FunctionDefinitionAst]){$a=$a.Parent}
  if($a -is [Management.Automation.Language.FunctionDefinitionAst]){$a.Extent.Text}else{"function $n {`n$($c.ScriptBlock.ToString())`n}"}}
-$ENGINE_TXT=$PRE+"`n"+((@('Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Id','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
+$ENGINE_TXT=$PRE+"`n"+((@('Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Set-DxFlag','Test-DxFlag','Get-SysCheck','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
 # ---------- Thread safety: WPF objects (CheckBox, Border...) live ONLY on the UI thread ----------
 # Background runspaces receive plain snapshots (strings, numbers, bools, arrays, hashtables) and return plain hashtables.
 function Copy-Act($a){$c=@{};foreach($k in $a.Keys){$c[$k]=$a[$k]};$c}      # acts hold only strings/numbers/bools/$null
@@ -882,7 +1009,8 @@ try{
  foreach($u in $units){
   if(-not(Fits $u)){$ust[$u.Key]='N/A';continue}
   $ust[$u.Key]=if($u.Sub){if((Safe-Test $u.Acts[0]) -eq $true){'Applied'}else{'Not applied'}}else{$stat[$u.TweakName]}}
- $sync.Result=@{Ok=$true;Error='';Stat=$stat;Ust=$ust;ActSt=$ast}
+ $sync.Msg='Checking hardware and drivers...';$sys=@();try{$sys=Get-SysCheck}catch{}   # plain assignment: Get-SysCheck returns the array as ONE object (,$out)
+ $sync.Result=@{Ok=$true;Error='';Stat=$stat;Ust=$ust;ActSt=$ast;Sys=$sys}
 }catch{$sync.Result=@{Ok=$false;Error="$($_.Exception.Message)";Stat=@{};Ust=@{};ActSt=@{}}}
 '@
 $APPLYCODE=@'
@@ -924,6 +1052,12 @@ function Scan{
 # UI thread only: applies the plain result hashtable to the WPF controls.
 function Apply-ScanResult($r){
   $script:actSt=if($r.ActSt){$r.ActSt}else{@{}}
+  if($script:sysPanel){$script:sysPanel.Children.Clear()
+   foreach($i in @($r.Sys)){if(-not $i){continue};$tb=New-Object Windows.Controls.TextBlock;$tb.TextWrapping='Wrap';$tb.FontSize=12;$tb.Margin=[Windows.Thickness]::new(0,2,0,2)
+    $col=@{ok='#81C784';tip='#FFB74D';info='#90A4AE'}[$i.S];$mk=@{ok='OK  ';tip='TIP ';info='INFO'}[$i.S]
+    $r1=New-Object Windows.Documents.Run "$mk  $($i.L): ";$r1.Foreground=$bc.ConvertFromString($col);$r1.FontWeight=[Windows.FontWeights]::SemiBold
+    $r2=New-Object Windows.Documents.Run ([string]$i.T);$r2.Foreground=$bc.ConvertFromString('#C8C8C8');[void]$tb.Inlines.Add($r1);[void]$tb.Inlines.Add($r2);[void]$script:sysPanel.Children.Add($tb)}}
+  $script:sysTips=@(@($r.Sys)|Where-Object{$_ -and $_.S -eq 'tip'}|ForEach-Object{"$($_.L): $($_.T)"})
   $c=@{'Applied'=0;'Partial'=0;'Not applied'=0;'Unknown'=0;'N/A'=0}
   foreach($t in $db){$st=$r.Stat[$t.Name];$stat[$t.Name]=$st;if($st){Set-Status $t $(if($st -eq 'Applied' -and -not(Undoable $t)){'Applied-perm'}else{$st});$c[$st]++}}
   foreach($u in $units){$st=$r.Ust[$u.Key];$ust[$u.Key]=$st
@@ -937,7 +1071,7 @@ function Apply-ScanResult($r){
     foreach($vn in $vfxAll){if(($stat[$vn] -eq 'Applied') -ne ($pn[1] -contains $vn)){$ok=$false;break}}
     if($ok){$cur=$pn[0];break}}
    $secCnt[$vk].Text+=" | current: $cur"}
-  Update-Bar
+  Update-Bar;Update-Simple
   $sum.Text="Scan result`n$($c['Applied']) applied | $($c['Partial']) partial | $($c['Not applied']) not applied | $($c['Unknown']) one-time | $($c['N/A']) n/a";Log ($sum.Text -replace "`n",': ')}
 function Show-ApplyResult($r){
  if(-not $r){Log '! the apply job returned no result - the switches now show the real system state';return}
@@ -945,6 +1079,7 @@ function Show-ApplyResult($r){
  $bad=@($r.Failed)
  if($bad.Count){[void][Windows.MessageBox]::Show("$($bad.Count) item(s) could not be fully applied or reverted:`n`n"+(($bad|ForEach-Object{" - $_"}) -join "`n")+"`n`nThese were NOT reported as done. The switches now show the real system state; see the log for details.",'DebloatHub','OK','Warning')}
  elseif($r.Done -gt 0){Log 'All requested changes were verified on the system. Sign out or reboot for everything to take effect.'}
+ if($r.Done -gt 0){$script:needReboot=$true}
  if($r.RpFailed){Log '! No restore point was created (see the message above).'}}
 function Show-EditionNote{try{$ed=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop).EditionID
  if($ed -notmatch 'Enterprise|Education|Server'){Log "Windows edition: $ed. This edition cannot turn Windows diagnostic data fully off; 'Disable telemetry & diagnostic services' sets the lowest level it allows (Required)."}}catch{}}
@@ -952,6 +1087,7 @@ function Warn-OtherUser{
  if($UserDetectErr){Log "! Could not identify the signed-in user ($UserDetectErr). Per-user switches use THIS account's profile."}
  if($OtherUser){Log "! DebloatHub runs under a different account than the signed-in user. Per-user switches are read and changed in the signed-in user's profile (SID $UserSid), not in this administrator account. Visual-effect switches are unavailable in this mode because Windows saves them for the account that changes them."}}
 function Scan-Done($r){
+ $script:scanned=$true
  try{
   if(-not $r){Log '! scan returned no result';return}
   if(-not $r.Ok){Log "! background scan failed: $($r.Error)";return}
@@ -1023,6 +1159,12 @@ $xaml=@'
  <Style TargetType="ScrollBar"><Setter Property="Width" Value="10"/><Setter Property="Background" Value="Transparent"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
   <Track x:Name="PART_Track" IsDirectionReversed="True"><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border CornerRadius="4" Background="#5A5A5A" Margin="2,0"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb></Track></ControlTemplate></Setter.Value></Setter></Style>
  <Style TargetType="ToolTip"><Setter Property="Background" Value="#2B2B2B"/><Setter Property="Foreground" Value="#F3F3F3"/><Setter Property="BorderBrush" Value="#4CC2FF"/><Setter Property="Padding" Value="12"/></Style>
+ <Style x:Key="Card" TargetType="Button"><Setter Property="Foreground" Value="#F3F3F3"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Margin" Value="6"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="VerticalContentAlignment" Value="Stretch"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+  <Border x:Name="b" Background="#2B2B2B" CornerRadius="14" BorderBrush="#3A3A3A" BorderThickness="1" Padding="22,18" RenderTransformOrigin="0.5,0.5"><Border.RenderTransform><ScaleTransform/></Border.RenderTransform><ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/></Border>
+  <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="#4CC2FF"/><Setter TargetName="b" Property="Background" Value="#313131"/></Trigger>
+   <Trigger Property="IsPressed" Value="True"><Setter TargetName="b" Property="RenderTransform"><Setter.Value><ScaleTransform ScaleX="0.98" ScaleY="0.98"/></Setter.Value></Setter></Trigger>
+   <Trigger Property="IsEnabled" Value="False"><Setter TargetName="b" Property="Opacity" Value="0.45"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+ <LinearGradientBrush x:Key="Brand" StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#4CC2FF" Offset="0"/><GradientStop Color="#B388FF" Offset="1"/></LinearGradientBrush>
 </Window.Resources>
 <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="260"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
  <Border Background="#181818" Padding="16,16,16,12"><DockPanel>
@@ -1035,7 +1177,7 @@ $xaml=@'
    <Border CornerRadius="8" Background="#2B2B2B" BorderBrush="#454545" BorderThickness="1" Width="260" Margin="0,0,16,6"><TextBox x:Name="txt" Background="Transparent" BorderThickness="0" Foreground="#F3F3F3" CaretBrush="#F3F3F3" Padding="10,7"/></Border>
    <Button x:Name="bScan" Content="Detect applied tweaks" Style="{StaticResource Btn}" Background="#4CC2FF" Foreground="#0B0B0B" Margin="0,0,16,6"/>
    <Button x:Name="pSafe" Content="Recommended" Style="{StaticResource Btn}"/><Button x:Name="pPriv" Content="Privacy" Style="{StaticResource Btn}"/>
-   <Button x:Name="pGame" Content="Gaming" Style="{StaticResource Btn}"/><Button x:Name="pNone" Content="Reset" Style="{StaticResource Btn}"/>
+   <Button x:Name="pGame" Content="Gaming" Style="{StaticResource Btn}"/><Button x:Name="pNone" Content="Reset" Style="{StaticResource Btn}"/><Button x:Name="bToSimple" Content="Simple view" Style="{StaticResource Btn}"/>
    <CheckBox x:Name="chkPC" Style="{StaticResource Sw}" Content="Show pros &amp; cons" IsChecked="True" VerticalAlignment="Center" Margin="8,0,0,6"/></WrapPanel>
   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel x:Name="pnl" Margin="0,0,6,0"/></ScrollViewer>
   <Border Grid.Row="2" Background="#2B2B2B" CornerRadius="10" Padding="16,12,16,8" Margin="0,10,0,0"><StackPanel>
@@ -1050,11 +1192,56 @@ $xaml=@'
    <Grid.Triggers><EventTrigger RoutedEvent="FrameworkElement.Loaded"><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="rot" Storyboard.TargetProperty="Angle" From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/></Storyboard></BeginStoryboard></EventTrigger></Grid.Triggers>
    <Path Data="M 9,2 A 7,7 0 1 1 2,9" Stroke="#4CC2FF" StrokeThickness="2.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/></Grid>
    <TextBlock x:Name="ldText" Text="Loading applied tweaks..." VerticalAlignment="Center" FontSize="13"/></StackPanel></Border>
+ <Border x:Name="simpleRoot" Grid.ColumnSpan="2" Background="#1E1E1E" Visibility="Collapsed"><Grid>
+  <StackPanel x:Name="chooser" VerticalAlignment="Center" HorizontalAlignment="Center" Width="780">
+   <TextBlock Text="DebloatHub" FontSize="44" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{StaticResource Brand}"/>
+   <TextBlock Text="How do you want to use it?" FontSize="16" Foreground="#9A9A9A" HorizontalAlignment="Center" Margin="0,6,0,26"/>
+   <UniformGrid Columns="2" Height="190">
+    <Button x:Name="chSimple" Style="{StaticResource Card}"><StackPanel>
+     <TextBlock Text="Simple" FontSize="24" FontWeight="SemiBold"/>
+     <TextBlock Text="A few big buttons. Removes ads, telemetry and background junk in one click. Safe and fully undoable." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/>
+     <TextBlock Text="Best for most people" Foreground="#4CC2FF" FontSize="12" Margin="0,14,0,0"/></StackPanel></Button>
+    <Button x:Name="chAdv" Style="{StaticResource Card}"><StackPanel>
+     <TextBlock Text="Advanced" FontSize="24" FontWeight="SemiBold"/>
+     <TextBlock Text="Every tweak with details, pros and cons. Choose item by item, services, apps, presets." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/>
+     <TextBlock Text="Full control" Foreground="#B388FF" FontSize="12" Margin="0,14,0,0"/></StackPanel></Button>
+   </UniformGrid>
+   <CheckBox x:Name="chRemember" Style="{StaticResource Sw}" Content="Remember my choice" HorizontalAlignment="Center" Margin="0,22,0,0"/>
+  </StackPanel>
+  <Grid x:Name="simpleView" Visibility="Collapsed" MaxWidth="940" Margin="36,26,36,20">
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+   <DockPanel><Button x:Name="bToAdv" DockPanel.Dock="Right" Content="Advanced options" Style="{StaticResource Btn}" VerticalAlignment="Center"/>
+    <TextBlock Text="DebloatHub" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Brand}" VerticalAlignment="Center"/></DockPanel>
+   <StackPanel Grid.Row="1" Margin="2,14,0,16"><TextBlock x:Name="sStatus" FontSize="15" Foreground="#C8C8C8" TextWrapping="Wrap" Text="Checking your PC..."/>
+    <TextBlock x:Name="sTips" FontSize="12.5" Foreground="#FFB74D" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed"/></StackPanel>
+   <UniformGrid Grid.Row="2" Columns="3" Height="200">
+    <Button x:Name="bRec" Style="{StaticResource Card}"><DockPanel>
+     <TextBlock x:Name="tRec" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
+     <StackPanel><TextBlock Text="Debloat" FontSize="22" FontWeight="SemiBold"/>
+      <TextBlock Text="Turns off ads, telemetry, Widgets and background junk. Everything you use keeps working." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+    <Button x:Name="bGame" Style="{StaticResource Card}"><DockPanel>
+     <TextBlock x:Name="tGame" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
+     <StackPanel><TextBlock Text="Debloat + Gaming" FontSize="22" FontWeight="SemiBold"/>
+      <TextBlock Text="Everything in Debloat, plus raw mouse input and no Game Bar or Sticky Keys pop-ups." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+    <Button x:Name="bUndo" Style="{StaticResource Card}"><DockPanel>
+     <TextBlock x:Name="tUndo" DockPanel.Dock="Bottom" Foreground="#FFB74D" FontSize="13" Margin="0,10,0,0"/>
+     <StackPanel><TextBlock Text="Undo" FontSize="22" FontWeight="SemiBold"/>
+      <TextBlock Text="Puts back everything DebloatHub changed on this PC." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+   </UniformGrid>
+   <WrapPanel Grid.Row="3" Margin="8,14,0,10">
+    <CheckBox x:Name="sRP" Style="{StaticResource Sw}" Content="Create a restore point first" IsChecked="True" Margin="0,0,24,6"/>
+    <TextBlock x:Name="lnkShow" Text="Show me exactly what changes" Foreground="#4CC2FF" Cursor="Hand" VerticalAlignment="Center" Margin="0,0,24,6" TextDecorations="Underline"/>
+    <Button x:Name="bReboot" Content="Restart now to finish" Style="{StaticResource Btn}" Background="#4CC2FF" Foreground="#0B0B0B" FontWeight="SemiBold" Visibility="Collapsed"/>
+   </WrapPanel>
+   <Border Grid.Row="4" CornerRadius="10" Background="#151515"><TextBox x:Name="slog" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Background="Transparent" Foreground="#A8A8A8" BorderThickness="0" Padding="12"/></Border>
+  </Grid>
+ </Grid></Border>
 </Grid></Window>
 '@
 $w=[Windows.Markup.XamlReader]::Parse($xaml)
 $w.Title="DebloatHub v$AppVersion"
-'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
+'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bGame','bUndo','tRec','tGame','tUndo','sRP','lnkShow','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
+$pSafe.ToolTip='Recommended: performance and privacy tweaks that keep every common feature working and can all be undone with one click (no app removals, no cleanups). Tweaks in this preset carry a "Recommended" badge.'
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
 $bc=New-Object Windows.Media.BrushConverter
 function Badge($t,$c,$tip){$b=New-Object Windows.Controls.Border;$b.Background=$bc.ConvertFromString($c)
@@ -1073,6 +1260,22 @@ foreach($sec in $secs){
  $hd=New-Object Windows.Controls.DockPanel;$hd.Margin=[Windows.Thickness]::new(8,0,8,8)
  $cn=New-Object Windows.Controls.TextBlock;$cn.FontSize=12;$cn.VerticalAlignment='Center';$cn.Foreground=$accent;[Windows.Controls.DockPanel]::SetDock($cn,'Right');[void]$hd.Children.Add($cn);$secCnt+=$cn
  $h=New-Object Windows.Controls.TextBlock;$h.Text=$sec;$h.FontSize=17;$h.FontWeight=[Windows.FontWeights]::SemiBold;[void]$hd.Children.Add($h);[void]$sp.Children.Add($hd)
+ if($sec -eq 'Performance & Gaming'){$sc0=New-Object Windows.Controls.Border;$sc0.Background=$bc.ConvertFromString('#232323');$sc0.CornerRadius=New-Object Windows.CornerRadius 8;$sc0.Padding=[Windows.Thickness]::new(14,10,14,10);$sc0.Margin=[Windows.Thickness]::new(8,0,8,12)
+  $scs=New-Object Windows.Controls.StackPanel;$sch=New-Object Windows.Controls.TextBlock;$sch.Text='System check (read-only)';$sch.FontWeight=[Windows.FontWeights]::SemiBold;$sch.FontSize=13;[void]$scs.Children.Add($sch)
+  $scn=New-Object Windows.Controls.TextBlock;$scn.Text='Things DebloatHub cannot change but that often matter more than any tweak. Checked during every scan.';$scn.FontSize=11;$scn.Foreground=$bc.ConvertFromString('#9A9A9A');$scn.TextWrapping='Wrap';$scn.Margin=[Windows.Thickness]::new(0,2,0,6);[void]$scs.Children.Add($scn)
+  $script:sysPanel=New-Object Windows.Controls.StackPanel;[void]$scs.Children.Add($script:sysPanel);$sc0.Child=$scs;[void]$sp.Children.Add($sc0)}
+ if($sec -eq $sSvc){$mp=New-Object Windows.Controls.StackPanel;$mp.Margin=[Windows.Thickness]::new(8,0,8,10)
+  $mc=New-Object Windows.Controls.CheckBox;$mc.Style=$w.FindResource('Sw');$mc.Content='Strict mode: Disabled instead of Manual';$mc.IsChecked=$SvcStrict
+  $mc.ToolTip='Manual (default): Windows can still start a service when an app or feature asks for it, so nothing breaks or crashes; it just no longer runs all the time. Strict: services are Disabled and never start. Use Strict only for services you are sure you never need.'
+  $mc.Add_Click({param($s,$e) $want=[bool]$s.IsChecked;$s.IsChecked=$SvcStrict
+   if($script:busy){return}
+   if([Windows.MessageBox]::Show("Switch the Background Services section to $(if($want){'Strict (Disabled)'}else{'Manual'}) mode?`n`nDebloatHub restarts to rebuild the switches. Changes you have not applied yet are lost. Services you already changed keep their current state (a Disabled service still counts as switched on in Manual mode; to make it Manual, switch it off, Apply, then on again). The original start type stays recorded for undo.",'DebloatHub','YesNo','Question') -ne 'Yes'){return}
+   try{if(-not(Test-Path 'HKCU:\SOFTWARE\DebloatHub')){New-Item 'HKCU:\SOFTWARE\DebloatHub' -Force|Out-Null};New-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name ServiceMode -Value $(if($want){'Strict'}else{'Manual'}) -PropertyType String -Force|Out-Null}catch{Log "! could not save the mode: $($_.Exception.Message)";return}
+   Start-Process powershell -WindowStyle $(if($ShowConsole){'Normal'}else{'Hidden'}) -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$MyPath`" -Elevated$(if($ShowConsole){' -ShowConsole'})";$w.Close()})
+  [void]$mp.Children.Add($mc)
+  $md=New-Object Windows.Controls.TextBlock;$md.TextWrapping='Wrap';$md.FontSize=11;$md.Foreground=$bc.ConvertFromString('#9A9A9A');$md.Margin=[Windows.Thickness]::new(56,2,0,0)
+  $md.Text=$(if($SvcStrict){'Strict mode: switched-on services are Disabled and never start, even when an app asks for them. Features that need them stop working.'}else{'Manual mode: switched-on services stop starting at boot, but Windows still starts them when an app or feature asks. Nothing crashes; they just stop running all the time. Services that already work this way are not listed.'})
+  [void]$mp.Children.Add($md);[void]$sp.Children.Add($mp)}
  if($sec -eq $s20){$pr=New-Object Windows.Controls.WrapPanel;$pr.Margin=[Windows.Thickness]::new(8,0,0,2)
   foreach($pn in 'Maximize looks','Recommended','Maximize performance'){$bt=New-Object Windows.Controls.Button;$bt.Content=$pn;$bt.Tag=$pn;$bt.Style=$w.FindResource('Btn');if($pn -eq 'Recommended'){$bt.Background=$accent;$bt.Foreground=[Windows.Media.Brushes]::Black}
    $bt.Add_Click({param($s,$e) Set-Preset $s.Tag});[void]$pr.Children.Add($bt)}
@@ -1094,6 +1297,7 @@ foreach($sec in $secs){
   [void]$top.Children.Add((Badge $t.Risk $rc ''))
   if(($t.Prof -split ',') -contains 'telemetry'){[void]$top.Children.Add((Badge 'ON = telemetry off' '#00695C' ''))}
   $n=($t.Src -split ',').Count
+  if(Is-RecT $t){[void]$top.Children.Add((Badge 'Recommended' '#4527A0' ''))}
   [void]$top.Children.Add((Badge "$n tool$(if($n -gt 1){'s'})" '#1565C0' ''))
   if($t.Win -ne 'Any'){[void]$top.Children.Add((Badge "Win $($t.Win) only" '#6A1B9A' ''))}
   [void]$top.Children.Add((Badge $(if(Undoable $t){'Undoable'}else{'No undo'}) $(if(Undoable $t){'#455A64'}else{'#8D6E63'}) ''))
@@ -1143,11 +1347,15 @@ function Refresh-View{$q=$txt.Text.Trim();$i=$nav.SelectedIndex
  for($k=0;$k -lt $secs.Count;$k++){$n=0
   foreach($r in $rowsBy[$k]){$m=(-not $q) -or (([string]$r.Tag).IndexOf($q,[StringComparison]::OrdinalIgnoreCase) -ge 0);$r.Visibility=if($m){'Visible'}else{'Collapsed'};if($m){$n++}}
   $cards[$k].Visibility=if(($i -le 0 -or ($i-1) -eq $k) -and $n -gt 0){'Visible'}else{'Collapsed'}}}
-function Pick($tag){if($script:busy){return};foreach($u in $units){$t=$u.T;$ap=($ust[$u.Key] -eq 'Applied');$u.Box.IsChecked=[bool]((Fits $t) -and ($ap -or ($tag -and (($t.Prof -split ',') -contains $tag))))};Sync-Masters;Update-Bar}
+function Pick($tag){if($script:busy){return};$n=0   # presets only ADD: switches that are already applied stay on
+ foreach($u in $units){$t=$u.T;$ap=($ust[$u.Key] -eq 'Applied')
+  $want=if($tag -eq 'recommended'){Is-Rec $u}else{$tag -and (($t.Prof -split ',') -contains $tag)}
+  $u.Box.IsChecked=[bool]((Fits $t) -and ($ap -or $want));if((Fits $t) -and $want -and -not $ap){$n++}}
+ Sync-Masters;Update-Bar;if($tag){Log "Preset '$tag': $n switch(es) turned on. Review them (blue bar), then press Apply."}}
 $cfg=Join-Path $(if($UserDesktop -and (Test-Path -LiteralPath $UserDesktop)){$UserDesktop}else{$UserProfile}) 'DebloatHub-selection.json'
 $nav.Add_SelectionChanged({Refresh-View});$txt.Add_TextChanged({Refresh-View});$nav.SelectedIndex=0
 $bScan.Add_Click({Scan})
-$pSafe.Add_Click({Pick 'safe'});$pPriv.Add_Click({Pick 'privacy'});$pGame.Add_Click({Pick 'gaming'});$pNone.Add_Click({Pick $null})
+$pSafe.Add_Click({Pick 'recommended'});$pPriv.Add_Click({Pick 'privacy'});$pGame.Add_Click({Pick 'gaming'});$pNone.Add_Click({Pick $null})
 $bApply.Add_Click({Run})
 $chkPC.Add_Click({$on=[bool]$chkPC.IsChecked;foreach($x in $pcBlocks){$x.Visibility=$(if($on){'Visible'}else{'Collapsed'})}
  try{if(-not(Test-Path 'HKCU:\SOFTWARE\DebloatHub')){New-Item 'HKCU:\SOFTWARE\DebloatHub' -Force|Out-Null};New-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name ShowProsCons -Value ([int]$on) -PropertyType DWord -Force|Out-Null}catch{}})
@@ -1160,13 +1368,57 @@ Add-Type -Namespace DH -Name Win -MemberDefinition @'
 $timer=New-Object Windows.Threading.DispatcherTimer;$timer.Interval=[TimeSpan]::FromMilliseconds(120)
 $timer.Add_Tick({$j=$script:job;if(-not $j){return}
  $m=$null;while($j.Sync.Q.TryDequeue([ref]$m)){Log $m}
- if($j.Sync.Msg){$ldText.Text=$j.Sync.Msg}
+ if($j.Sync.Msg){$ldText.Text=$j.Sync.Msg;if($sStatus -and $simpleView.Visibility -eq 'Visible'){$sStatus.Text=$j.Sync.Msg}}
  if($j.H.IsCompleted){$timer.Stop()
   try{[void]$j.PS.EndInvoke($j.H)}catch{Log "! $($_.Exception.Message)"}
   foreach($er in @($j.PS.Streams.Error)){Log "! $($er.ToString())"}
   while($j.Sync.Q.TryDequeue([ref]$m)){Log $m}
   $script:res=$j.Sync.Result;$j.PS.Dispose();$j.RS.Dispose();$script:job=$null;$script:busy=$false;$bScan.IsEnabled=$true;Hide-Load
   & $j.Done $script:res}})
+# ---------- Simple view: three buttons on top of the same engine (presets -> switches -> Run) ----------
+$script:needReboot=$false;$script:scanned=$false
+function In-Set($u,$what){(Fits $u.T) -and $u.Box.IsEnabled -and $(if($what -eq 'game'){(Is-Rec $u) -or ($SIMPLE_GAMING -contains $u.T.Name) -or ($SIMPLE_GAMING -contains $u.Key)}else{Is-Rec $u})}
+function DH-Changed($u){                          # did DebloatHub itself change this switch? (a recorded original or a command marker exists)
+ foreach($a in $u.Acts){if(-not(Act-Revertible $a)){continue}
+  if($a.K -eq 'Cmd'){$id=Cmd-Id $a;if((Get-ItemProperty 'HKLM:\SOFTWARE\DebloatHub\Applied' -Name $id -ErrorAction SilentlyContinue).$id){return $true}}
+  elseif(Snap-Read $a){return $true}}
+ return $false}
+function Undo-Units{@($units|Where-Object{$_.Box.IsEnabled -and $ust[$_.Key] -eq 'Applied' -and (Can-Undo $_) -and (DH-Changed $_)})}
+function Update-Simple{
+ if(-not $simpleView -or $simpleView.Visibility -ne 'Visible'){return}
+ if($script:busy -or -not $script:scanned){$bRec.IsEnabled=$false;$bGame.IsEnabled=$false;$bUndo.IsEnabled=$false;return}
+ $rn=@($units|Where-Object{(In-Set $_ 'rec') -and $ust[$_.Key] -ne 'Applied'}).Count
+ $gn=@($units|Where-Object{(In-Set $_ 'game') -and $ust[$_.Key] -ne 'Applied'}).Count
+ $un=@(Undo-Units).Count
+ $tRec.Text=$(if($rn){"$rn change$(if($rn -ne 1){'s'}) to make"}else{'Done on this PC'});$bRec.IsEnabled=($rn -gt 0)
+ $tGame.Text=$(if($gn){"$gn change$(if($gn -ne 1){'s'}) to make"}else{'Done on this PC'});$bGame.IsEnabled=($gn -gt 0)
+ $tUndo.Text=$(if($un){"$un change$(if($un -ne 1){'s'}) to undo"}else{'Nothing to undo'});$bUndo.IsEnabled=($un -gt 0)
+ $sStatus.Text=$(if($script:needReboot){'Done. Restart your PC to finish.'}elseif(-not $rn){'Your PC is debloated. You can still undo it at any time.'}else{"Ready. Pick what you want; nothing changes until you confirm."})
+ $bReboot.Visibility=$(if($script:needReboot){'Visible'}else{'Collapsed'})
+ $tp=@($script:sysTips);if($tp.Count){$sTips.Text="Worth a look (DebloatHub cannot change these):`n- "+($tp -join "`n- ");$sTips.Visibility='Visible'}else{$sTips.Visibility='Collapsed'}}
+function Simple-Run($what){
+ if($script:busy){return}
+ Pick $null                                       # every switch = current state of the PC
+ if($what -eq 'undo'){foreach($u in (Undo-Units)){$u.Box.IsChecked=$false}}
+ else{foreach($u in $units){if(In-Set $u $what){$u.Box.IsChecked=$true}}}
+ Sync-Masters;Update-Bar
+ $chkDry.IsChecked=$false;$chkRP.IsChecked=[bool]$sRP.IsChecked
+ Run}
+function Show-View($v){
+ switch($v){
+  'choose'  {$simpleRoot.Visibility='Visible';$chooser.Visibility='Visible';$simpleView.Visibility='Collapsed'}
+  'simple'  {$simpleRoot.Visibility='Visible';$chooser.Visibility='Collapsed';$simpleView.Visibility='Visible';Update-Simple}
+  'advanced'{$simpleRoot.Visibility='Collapsed'}}}
+function Save-UiMode($v){try{if(-not(Test-Path 'HKCU:\SOFTWARE\DebloatHub')){New-Item 'HKCU:\SOFTWARE\DebloatHub' -Force|Out-Null};New-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name UiMode -Value $v -PropertyType String -Force|Out-Null}catch{}}
+$chSimple.Add_Click({if($chRemember.IsChecked){Save-UiMode 'Simple'};Show-View 'simple'})
+$chAdv.Add_Click({if($chRemember.IsChecked){Save-UiMode 'Advanced'};Show-View 'advanced'})
+$bToAdv.Add_Click({Save-UiMode 'Advanced';Show-View 'advanced'})
+$bToSimple.Add_Click({Save-UiMode 'Simple';Show-View 'simple'})
+$bRec.Add_Click({Simple-Run 'rec'});$bGame.Add_Click({Simple-Run 'game'});$bUndo.Add_Click({Simple-Run 'undo'})
+$lnkShow.Add_MouseLeftButtonUp({if($script:busy){return};Pick 'recommended';Show-View 'advanced';$nav.SelectedIndex=0})   # the blue bars show every pending change
+$bReboot.Add_Click({if([Windows.MessageBox]::Show('Restart the PC now? Save your work in other apps first.','DebloatHub','YesNo','Question') -eq 'Yes'){Start-Process shutdown.exe -ArgumentList '/r /t 5'}})
+$startView='choose';try{$um=(Get-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name UiMode -ErrorAction Stop).UiMode;if($um -eq 'Simple'){$startView='simple'}elseif($um -eq 'Advanced'){$startView='advanced'}}catch{}
+Show-View $startView
 $w.Add_Closing({param($s,$e) if($script:busy -and [Windows.MessageBox]::Show('A job is still running. Close anyway?','DebloatHub','YesNo') -ne 'Yes'){$e.Cancel=$true}})
 $w.Add_ContentRendered({if(-not $ShowConsole){try{[void][DH.Win]::ShowWindow([DH.Win]::GetConsoleWindow(),0)}catch{}};Warn-OtherUser;Show-EditionNote;Scan})
 [void]$w.ShowDialog()
