@@ -832,8 +832,8 @@ function Get-SysCheck{
    if($age -gt 180 -and $n -match 'NVIDIA|AMD|Radeon|Intel|Arc'){$out+=@{L='GPU';S='tip';T="$t. Over 6 months old: newer drivers often fix stutter and add game-specific fixes. Get it from NVIDIA / AMD / Intel (on laptops also the laptop maker's site)."}}
    else{$out+=@{L='GPU';S='ok';T=$t}}
    $cur=[int]$v.CurrentRefreshRate;$max=[int]$v.MaxRefreshRate
-   if($cur -gt 0 -and $v.CurrentHorizontalResolution){
-    if($max -gt $cur+5 -and $cur -le 75){$out+=@{L='Display';S='tip';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz, while up to $max Hz is reported. If your screen supports more: Settings > System > Display > Advanced display > Choose a refresh rate. This is one of the most noticeable upgrades for games."}}
+   if($cur -ge 24 -and $cur -le 500 -and $v.CurrentHorizontalResolution){   # virtual GPUs report nonsense (1 Hz): skip those
+    if($max -gt $cur+5 -and $max -le 500 -and $cur -le 75){$out+=@{L='Display';S='tip';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz, while up to $max Hz is reported. If your screen supports more: Settings > System > Display > Advanced display > Choose a refresh rate. This is one of the most noticeable upgrades for games."}}
     else{$out+=@{L='Display';S='info';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz"}}}}}catch{}
  try{$m=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction Stop)
   if($m.Count){
@@ -841,11 +841,11 @@ function Get-SysCheck{
    $cfg=[int](($m|Where-Object{$_.ConfiguredClockSpeed}|Measure-Object ConfiguredClockSpeed -Minimum).Minimum)
    $rated=[int](($m|Measure-Object Speed -Maximum).Maximum)
    $type=switch([int]@($m)[0].SMBIOSMemoryType){26{'DDR4'}34{'DDR5'}35{'LPDDR5'}30{'LPDDR4'}default{''}}
-   $pn=(@($m|ForEach-Object{("$($_.Manufacturer) $($_.PartNumber)").Trim()}|Where-Object{$_}|Select-Object -Unique) -join ', ')
-   $t="$gb GB $type at $cfg MT/s, $($m.Count) module(s)$(if($pn){" ($pn)"})"
+   $pn=(@($m|ForEach-Object{("$($_.Manufacturer) $($_.PartNumber)" -replace '\b(None|Undefined|Unknown|To be filled by O\.E\.M\.)\b','').Trim()}|Where-Object{$_ -and $_ -notmatch '^Microsoft Corporation$'}|Select-Object -Unique) -join ', ')
+   $t="$gb GB$(if($type){" $type"})$(if($cfg -gt 0){" at $cfg MT/s"}), $($m.Count) module(s)$(if($pn){" ($pn)"})"
    $base=($type -eq 'DDR4' -and $cfg -le 2400) -or ($type -eq 'DDR5' -and $cfg -le 4800)
-   if($rated -gt $cfg+50){$out+=@{L='RAM';S='tip';T="$t. The modules report $rated MT/s but run slower. $(if($laptop){'On laptops the maker usually fixes the speed.'}else{'Enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS.'})"}}
-   elseif($base -and -not $laptop){$out+=@{L='RAM';S='tip';T="$t. That is the safe default (JEDEC) speed. If your RAM is rated faster (search the part number), enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS: often a 10-20% gain in CPU-heavy games, especially on Ryzen."}}
+   if($cfg -gt 0 -and $rated -gt $cfg+50){$out+=@{L='RAM';S='tip';T="$t. The modules report $rated MT/s but run slower. $(if($laptop){'On laptops the maker usually fixes the speed.'}else{'Enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS.'})"}}
+   elseif($cfg -gt 0 -and $base -and -not $laptop){$out+=@{L='RAM';S='tip';T="$t. That is the safe default (JEDEC) speed. If your RAM is rated faster (search the part number), enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS: often a 10-20% gain in CPU-heavy games, especially on Ryzen."}}
    else{$out+=@{L='RAM';S='ok';T=$t}}
    if($gb -lt 8){$out+=@{L='RAM';S='tip';T="Only $gb GB of RAM: more memory is the single biggest upgrade for this PC."}}
    if($m.Count -eq 1 -and -not $laptop){$out+=@{L='RAM';S='tip';T='One memory module = single channel. Two matching modules (dual channel) can raise FPS noticeably on integrated and CPU-limited systems.'}}}}catch{}
@@ -1223,7 +1223,7 @@ $xaml=@'
     <Button x:Name="bExp" Content="Save selection" Style="{StaticResource Btn}"/><Button x:Name="bImp" Content="Load selection" Style="{StaticResource Btn}"/></WrapPanel>
    <Border CornerRadius="6" Background="#1A1A1A"><TextBox x:Name="log" Height="96" IsReadOnly="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Background="Transparent" Foreground="#CFCFCF" BorderThickness="0" Padding="8"/></Border></StackPanel></Border>
  </Grid>
- <Border x:Name="ld" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,16,26,0" Background="#2B2B2B" BorderBrush="#4CC2FF" BorderThickness="1" CornerRadius="18" Padding="12,7,16,7">
+ <Border x:Name="ld" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,44,30" Background="#2B2B2B" BorderBrush="#4CC2FF" BorderThickness="1" CornerRadius="18" Padding="12,7,16,7">
   <StackPanel Orientation="Horizontal"><Grid Width="18" Height="18" RenderTransformOrigin="0.5,0.5" Margin="0,0,10,0"><Grid.RenderTransform><RotateTransform x:Name="rot"/></Grid.RenderTransform>
    <Grid.Triggers><EventTrigger RoutedEvent="FrameworkElement.Loaded"><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="rot" Storyboard.TargetProperty="Angle" From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/></Storyboard></BeginStoryboard></EventTrigger></Grid.Triggers>
    <Path Data="M 9,2 A 7,7 0 1 1 2,9" Stroke="#4CC2FF" StrokeThickness="2.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/></Grid>
