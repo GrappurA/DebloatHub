@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 # DebloatHub - curated, previewable, reversible Windows tweaks in one GUI.
 # Run: right-click > "Run with PowerShell" (auto-elevates). Try it in a VM first.
-param([switch]$Elevated,[switch]$ShowConsole)
+param([switch]$Elevated,[switch]$ShowConsole,[switch]$NoShow)   # -NoShow: build everything but do not open the window (automated tests dot-source the script with it)
 $AppVersion='1.1.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
 $MyPath=$PSCommandPath
 $isAdmin=(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -11,7 +11,7 @@ if(-not $isAdmin -and -not $Elevated){
 Add-Type -AssemblyName PresentationFramework
 if(-not $isAdmin){[Windows.MessageBox]::Show('Administrator rights are required.')|Out-Null;exit}
 $ErrorActionPreference='Stop'
-trap{$m="$_`r`n$($_.ScriptStackTrace)";Set-Content "$env:TEMP\DebloatHub-error.log" $m;Write-Host $m -ForegroundColor Red;[Windows.MessageBox]::Show("Startup error (also saved to %TEMP%\DebloatHub-error.log):`n`n$_")|Out-Null;break}
+trap{$m="$_`r`n$($_.ScriptStackTrace)";Set-Content "$env:TEMP\DebloatHub-error.log" $m;Write-Host $m -ForegroundColor Red;if(-not $NoShow){[Windows.MessageBox]::Show("Startup error (also saved to %TEMP%\DebloatHub-error.log):`n`n$_")|Out-Null};break}
 $build=[Environment]::OSVersion.Version.Build; $W11=$build -ge 22000
 
 # ---------- Signed-in user: UAC may elevate to a DIFFERENT admin account, whose HKCU/APPDATA are not the user's ----------
@@ -1452,4 +1452,5 @@ $startView='choose';try{$um=(Get-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name 
 Show-View $startView
 $w.Add_Closing({param($s,$e) if($script:busy -and [Windows.MessageBox]::Show('A job is still running. Close anyway?','DebloatHub','YesNo') -ne 'Yes'){$e.Cancel=$true}})
 $w.Add_ContentRendered({if(-not $ShowConsole){try{[void][DH.Win]::ShowWindow([DH.Win]::GetConsoleWindow(),0)}catch{}};Warn-OtherUser;Show-EditionNote;Scan})
+if($NoShow){return}
 [void]$w.ShowDialog()
