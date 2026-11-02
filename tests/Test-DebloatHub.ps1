@@ -37,8 +37,10 @@ Check 'tweak database found (100+ static tweaks)' { if ($tweakNames.Count -lt 10
 $assign = @{}
 foreach ($a in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) { $assign[$a.Left.Extent.Text] = $a }
 function StringsIn($node) { @($node.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $n.StringConstantType -ne 'BareWord' }, $true) | ForEach-Object Value) }
-Check 'every Recommended entry names an existing tweak' {
-    $miss = @(StringsIn $assign['$RECOMMENDED'].Right | Where-Object { -not $tweakNames.ContainsKey(($_ -split '\|')[0]) }); if ($miss.Count) { throw "unknown: $($miss -join ', ')" } }
+$appNames = @{}
+foreach ($sc in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true)) { $appNames[$sc.Value] = 1 }
+Check 'every Recommended entry names an existing tweak (or, for APP:<package>, a package the database lists)' {
+    $miss = @(StringsIn $assign['$RECOMMENDED'].Right | Where-Object { if ($_ -like 'APP:*') { -not $appNames.ContainsKey($_.Substring(4)) } else { -not $tweakNames.ContainsKey(($_ -split '\|')[0]) } }); if ($miss.Count) { throw "unknown: $($miss -join ', ')" } }
 Check 'every Simple "Debloat + Gaming" entry names an existing tweak' {
     $miss = @(StringsIn $assign['$SIMPLE_GAMING'].Right | Where-Object { -not $tweakNames.ContainsKey(($_ -split '\|')[0]) }); if ($miss.Count) { throw "unknown: $($miss -join ', ')" } }
 Check 'every fTw tweak has pros/cons in $more' {

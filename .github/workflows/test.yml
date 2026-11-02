@@ -1,0 +1,32 @@
+name: Tests
+
+# Real Windows, thrown away after every run: the tests really apply and revert tweaks there.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]   # 2022 ~ Windows 10 code paths, 2025 ~ Windows 11 (build >= 22000)
+        mode: [Manual, Strict]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    name: ${{ matrix.os }} / ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run tests (Windows PowerShell 5.1)
+        shell: powershell
+        run: .\tests\Run-Tests.ps1 -DhtMode ${{ matrix.mode }} -DhtOut "$env:RUNNER_TEMP\dh-results"
+
+      - name: Upload results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.os }}-${{ matrix.mode }}
+          path: ${{ runner.temp }}/dh-results

@@ -2,6 +2,30 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Autoruns** (was *Startup Programs*): also lists third-party scheduled tasks and third-party auto-start services. Disable only, nothing is deleted:
+  - Tasks are disabled.
+  - Services go to Manual (Disabled in Strict mode).
+  - Drivers, security, VPN and similar entries are marked Moderate/Advanced.
+- **Hide taskbar search completely**, the alternative to icon-only (switching one on turns the other off).
+- **Recommended is more drastic.** It now also:
+  - hides the taskbar search;
+  - removes promo apps and games, Microsoft consumer and legacy apps, Windows 11 extras, Xbox and Copilot apps (keeps Teams, Quick Assist, Phone Link, Media Player, Movies & TV and Get Help);
+  - disables every non-essential startup app (keeps drivers, audio, touchpad, GPU, security, sync, VPN, password managers, remote access, G-Helper and Teams);
+  - sets IP Helper and the diagnostics services to Manual.
+
+  App removals are the only part of Recommended that can't be undone with one click.
+- **Tests on real Windows** (`tests/Run-Tests.ps1`, workflow *Tests*): on Windows Server 2022 and 2025, in Manual and Strict mode, every detector is checked against the real system, and every revertible registry, service, task and startup switch is applied, verified, undone with the Simple view's *Undo* and compared with the original state.
+
+### Fixed
+- Undo no longer touches parts of a switch that DebloatHub never changed: when some parts were already in place before (e.g. AllowTelemetry = 0 set by another tool), only the parts with a recorded original are reverted.
+- Restoring a service's start type keeps its *Automatic (Delayed Start)* flag.
+- A failed apply no longer leaves its undo record behind.
+- System check ignores implausible refresh rates (virtual machines report 1 Hz) and placeholder RAM part numbers.
+- The loading indicator no longer covers the toolbar.
+
 ## [1.1.0] - 2026-11-02
 
 ### Fixed
@@ -24,7 +48,7 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
 - **Unattended mode:** `-Preset Debloat|Gaming|Undo` or `-Selection <file>`, with `-DryRun` and `-NoRestorePoint`, and meaningful exit codes.
 - **Log file:** every session is logged to `%ProgramData%\DebloatHub\Logs` (kept 90 days).
 - **Save/Load selection** ask where to save or load the file.
-- **Startup Programs** also lists the startup tasks of Microsoft Store apps (new Teams, Spotify, WhatsApp...).
+- **Startup apps** also include the startup tasks of Microsoft Store apps (new Teams, Spotify, WhatsApp...).
 - New tweaks: *Start menu: no recommendations or account notifications* (Windows 11), *Disable OneDrive and sync-provider ads in Explorer*, *Classic right-click menu* (Windows 11), *Hide Copilot button on the taskbar*, *Do not install drivers through Windows Update*, *Stop Windows reinstalling Teams*, *Block OneDrive by policy* (part of Uninstall OneDrive), and the Widgets package in *Remove Windows 11 extra apps*.
 - Existing tweaks cover more: telemetry tasks include MareBackup and Device Information; Start/Settings suggestions include Settings suggested content, the post-update welcome experience and the "finish setting up your device" screen; Game DVR is also turned off by machine policy.
 - **Tests and CI:** `tests/Test-DebloatHub.ps1` (syntax, consistency, JSONC editing, driver selection, link-safe cleanup, leftover logic) runs on every push in Windows PowerShell 5.1 and PowerShell 7, with PSScriptAnalyzer and unattended dry runs of every preset on Windows. Releases are only published when CI passes.

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 # DebloatHub - curated, previewable, reversible Windows tweaks in one GUI.
 # Run: right-click > "Run with PowerShell" (auto-elevates). Try it in a VM first.
-param([switch]$Elevated,[switch]$ShowConsole,
+param([switch]$Elevated,[switch]$ShowConsole,[switch]$NoShow,   # -NoShow: build everything but do not open the window (automated tests dot-source the script with it)
  # Unattended mode (no window): -Preset Debloat|Gaming|Undo, or -Selection <file saved with "Save selection">. Add -DryRun to preview, -NoRestorePoint to skip the restore point.
  [ValidateSet('Debloat','Gaming','Undo')][string]$Preset,[string]$Selection,[switch]$DryRun,[switch]$NoRestorePoint,
  # -Screenshot <folder>: renders the Advanced and Simple views to PNG files after the first scan, then closes (used by CI to refresh the README screenshots)
@@ -28,7 +28,7 @@ if($Wow -or (-not $isAdmin -and -not $Elevated)){
 Add-Type -AssemblyName PresentationFramework
 if(-not $isAdmin){[Windows.MessageBox]::Show('Administrator rights are required.')|Out-Null;exit}
 $ErrorActionPreference='Stop'
-trap{$m="$_`r`n$($_.ScriptStackTrace)";Set-Content "$env:TEMP\DebloatHub-error.log" $m;Write-Host $m -ForegroundColor Red;if(-not $Headless){[Windows.MessageBox]::Show("Startup error (also saved to %TEMP%\DebloatHub-error.log):`n`n$_")|Out-Null};if($Headless){exit 2};break}
+trap{$m="$_`r`n$($_.ScriptStackTrace)";Set-Content "$env:TEMP\DebloatHub-error.log" $m;Write-Host $m -ForegroundColor Red;if(-not $Headless -and -not $NoShow){[Windows.MessageBox]::Show("Startup error (also saved to %TEMP%\DebloatHub-error.log):`n`n$_")|Out-Null};if($Headless){exit 2};break}
 # One instance at a time: two copies applying at once would overwrite each other's undo records.
 $script:Mutex=New-Object Threading.Mutex($false,'Global\DebloatHub-SingleInstance')
 $gotMutex=$false;try{$gotMutex=$script:Mutex.WaitOne(5000)}catch [Threading.AbandonedMutexException]{$gotMutex=$true}   # abandoned = the previous copy crashed: the mutex is ours now
@@ -134,6 +134,7 @@ fTw $s10 'Hide Chat button' 'Removes the Teams "Chat" button from the Windows 11
 fTw $s10 'Hide People Bar (Windows 10)' 'Hides the My People icon and contacts bar on the taskbar. Windows 10 only; Microsoft has been removing the feature, so on current builds it may already be gone and this changes nothing.' Safe 'DebloatHub' 10 '' @(fReg "$ADV\People" PeopleBand 0 1)
 fTw $s10 'Hide Meet Now icon (Windows 10)' 'Removes the Skype Meet Now icon from the notification area (policy value HideSCAMeetNow). Windows 10 only; the icon is not shown on Enterprise or Azure AD accounts anyway. Sign out and back in if it does not disappear at once.' Safe 'DebloatHub' 10 '' @(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' HideSCAMeetNow 1 $null)
 fTw $s10 'Collapse taskbar search to an icon' 'Shows only the magnifier instead of the wide search box and frees taskbar space. Undo restores the search box (value 2). A search policy from your organization overrides this setting.' Safe 'DebloatHub' Any '' @(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' SearchboxTaskbarMode 1 $SearchBoxMode)
+fTw $s10 'Hide taskbar search completely' 'Removes the search box and icon from the taskbar. Search still works: press the Windows key and start typing. Undo restores the search box (value 2).' Safe 'DebloatHub' Any '' @(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Search' SearchboxTaskbarMode 0 $SearchBoxMode)
 fTw $s10 'Disable search highlights' 'Removes the daily Bing picture and trending items from the search box and search home, leaving a plain search field.' Safe 'DebloatHub' Any '' @(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\SearchSettings' IsDynamicSearchBoxEnabled 0 1)
 fTw $s10 'Enable End Task in taskbar right-click' 'Adds "End task" to the right-click menu of taskbar apps (Windows 11 23H2+), which force-closes a frozen app without Task Manager.' Safe 'Win11Debloat' 11 '' @(fReg "$ADV\TaskbarDeveloperSettings" TaskbarEndTask 1 0)
 fTw $s5 'Show full path in title bar' 'Explorer shows the complete folder path (C:\Users\...) in the window and taskbar title instead of just the folder name.' Safe 'Windows-Maintenance-Tool' Any '' @(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CabinetState' FullPath 1 0)
@@ -207,6 +208,7 @@ $more=@{
 'Hide People Bar (Windows 10)'=@('Only if the People icon still shows on your taskbar.','Frees taskbar space; removes an unused contacts bar.','Nothing noticeable. On current Windows 10 builds the feature may already be gone, so this may do nothing.')
 'Hide Meet Now icon (Windows 10)'=@('Only if the Meet Now icon shows in your notification area.','Removes the Skype Meet Now shortcut from the tray.','You lose the one-click meeting shortcut. It may need a sign-out to take effect.')
 'Collapse taskbar search to an icon'=@('Optional; useful on small screens or busy taskbars.','Saves a lot of taskbar space (the search box is the widest item).','Search is one click further away (just press the Windows key and type instead).')
+'Hide taskbar search completely'=@('Use it if you start searches with the Windows key anyway.','Frees the most taskbar space; no search highlights or Bing content on the taskbar.','No search button to click: press the Windows key and type instead. Switching it on turns off "Collapse taskbar search to an icon".')
 'Disable search highlights'=@('Optional; it only changes what the search box shows.','A plain search field without the daily picture and trending Bing items.','You no longer see the daily highlights in the search box and search home.')
 'Enable End Task in taskbar right-click'=@('Useful if apps sometimes freeze.','Kill a frozen app in two clicks.','Easy to hit by accident; unsaved work in that app is lost without a prompt.')
 'Show file extensions'=@('Recommended for everyone.','You see the real file type, so "invoice.pdf.exe" malware tricks stop working; renaming file types becomes possible.','When renaming you must be careful not to change the extension by accident.')
@@ -248,7 +250,7 @@ $more['Do not install drivers through Windows Update']=@('Use it if Windows Upda
 $more['Stop Windows reinstalling Teams (Chat auto-install)']=@('Use it after removing Teams (personal) so it stays gone.','Teams personal does not come back with feature updates or for new accounts.','None for most people. On a few builds Windows protects this key; DebloatHub then reports the switch as failed and nothing else changes.')
 
 # ---------- Round 2: startup, services, features, Edge/background, OEM (written from my own knowledge, NOT from the 7 repos - verify) ----------
-$s15='Startup Programs';$s16='Services (start on demand)';$s17='Optional Windows Features';$s18='Edge & Background Apps';$s19='OEM Utilities'
+$s15='Autoruns';$s16='Services (start on demand)';$s17='Optional Windows Features';$s18='Edge & Background Apps';$s19='OEM Utilities'
 $secs=@($secs|Where-Object{$_ -ne $s14})+@($s18,$s15,$s16,$s17,$s19,$s14)
 $LBL=@{'Microsoft.549981C3F5F10'='Cortana';'Microsoft.GamingApp'='Xbox app';'Microsoft.XboxApp'='Xbox Console Companion (old)';'Microsoft.OutlookForWindows'='Outlook (new)';'microsoft.windowscommunicationsapps'='Mail and Calendar (old)';'Microsoft.Windows.DevHome'='Dev Home';'Microsoft.Todos'='Microsoft To Do';'MicrosoftCorporationII.MicrosoftFamily'='Microsoft Family';'MicrosoftCorporationII.QuickAssist'='Quick Assist';'Microsoft.BingSearch'='Bing Search';'Microsoft.MicrosoftJournal'='Journal';'Microsoft.YourPhone'='Phone Link';'MicrosoftWindows.CrossDevice'='Phone Link helper (Cross Device)';'*DellInc*'='Dell apps';'*AD2F1837*'='HP apps (Support Assistant, Smart...)';'*Lenovo*'='Lenovo apps (Vantage...)';'*AcerIncorporated*'='Acer apps';'*ASUS*'='ASUS apps (Armoury Crate...)';'*McAfee*'='McAfee trial';'*Norton*'='Norton trial'
  MapsBroker='Downloaded Maps Manager';TrkWks='Distributed Link Tracking';PcaSvc='Program Compatibility Assistant';edgeupdate='Edge Update'
@@ -517,7 +519,7 @@ function Json-Set($a,$jv){                       # sets (or, when $jv is $null, 
 $s21='Developer Tools Privacy';$s22='Browser Privacy & Security';$s23='Windows Hardening & Privacy'
 $secs=@($secs|Where-Object{$_ -ne $s14})+@($s21,$s22,$s23,$s14)
 $VSC="$UserAppData\Code\User\settings.json";$CP='HKLM:\SOFTWARE\Policies\Google\Chrome';$FP='HKLM:\SOFTWARE\Policies\Mozilla\Firefox';$SS='HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy'
-$splitOK=@();$excl=@{'Enable Storage Sense (automatic weekly cleanup)'='Disable Storage Sense auto cleanup';'Disable Storage Sense auto cleanup'='Enable Storage Sense (automatic weekly cleanup)'}
+$splitOK=@();$excl=@{'Enable Storage Sense (automatic weekly cleanup)'='Disable Storage Sense auto cleanup';'Disable Storage Sense auto cleanup'='Enable Storage Sense (automatic weekly cleanup)';'Hide taskbar search completely'='Collapse taskbar search to an icon';'Collapse taskbar search to an icon'='Hide taskbar search completely'}
 function AddT($sec,$name,$desc,$risk,$prof,$acts,$rec,$m,[switch]$split,$when=$true){if(-not $when){return};$script:db+=fTw $sec $name $desc $risk $sd Any $prof $acts $rec;$script:more[$name]=$m;if($split){$script:splitOK+=$name}}
 
 AddT $s21 'VS Code: turn off telemetry, feedback prompts & experiments' 'Sets three documented settings in your VS Code user settings.json in place (comments and formatting are kept; a .debloathub.bak copy is made the first time): telemetry.telemetryLevel = off, telemetry.feedback.enabled = false, workbench.enableExperiments = false.' Safe 'safe,privacy,telemetry' @((fJson $VSC 'telemetry.telemetryLevel' 'off' $null),(fJson $VSC 'telemetry.feedback.enabled' $false $null),(fJson $VSC 'workbench.enableExperiments' $false $null)) 'Your settings.json is edited in place: comments, trailing commas and layout stay. Extensions may still send their own telemetry. Does nothing if VS Code has never been started on this account.' @('Needed only if you want to help Microsoft improve VS Code or get early features.','No usage data, error or crash reports to Microsoft; no survey or issue-reporter prompts.','New features may reach you later because VS Code rolls them out through experiments.') -split -when (Test-Path -LiteralPath (Split-Path $VSC))
@@ -637,6 +639,25 @@ SvcGroup -Fixed 'ASUS services (replaced by G-Helper)' 'Turns off the ASUS backg
 foreach($k in @('ArmouryCrateControlInterface','ArmouryCrateProArtService','AsHidService','ASUSOptimization','AsusAppService','ASUSLinkNear','ASUSLinkRemote','ASUSSoftwareManager','ASUSLiveUpdateAgent','ASUSSwitch','ASUSSystemAnalysis','ASUSSystemDiagnosis','ASUSXGMobileService','AsusCertService','ArmouryCrateSEService','ArmouryCrateService','LightingService')){if(-not $LBL.ContainsKey($k)){$LBL[$k]=$k}}
 
 SvcGroup -Fixed 'Third-party updaters & helpers: start on demand' 'Sets background updater and vendor telemetry services from Automatic to Manual: Google (Chrome) Update, Brave Update, Adobe Acrobat/Creative Cloud update and genuine-check services, Dropbox Update, HP Touchpoint Analytics and HP diagnostics, Dell SupportAssist, AMD User Experience Program and Crash Defender, Killer Analytics. Only services installed on this PC are listed.' Safe @(@('gupdate','M','Automatic'),@('GoogleUpdaterService*','M','Automatic'),@('GoogleUpdaterInternalService*','M','Automatic'),@('brave','M','Automatic'),@('AdobeARMservice','M','Automatic'),@('AdobeUpdateService','M','Automatic'),@('AGSService','M','Automatic'),@('AGMService','M','Automatic'),@('dbupdate','M','Automatic'),@('HpTouchpointAnalyticsService','M','Automatic'),@('HPDiagsCap','M','Automatic'),@('HPSysInfoCap','M','Automatic'),@('SupportAssistAgent','M','Automatic'),@('AUEPLauncher','M','Automatic'),@('AMD Crash Defender Service','M','Automatic'),@('KAPSService','M','Automatic')) 'Recommended: the apps still update through their own scheduled tasks or when you open them.' @('Use it if these services run all the time just to check for updates or collect usage data.','Fewer always-running processes at boot; less background network and disk activity.','Updates may arrive a little later (when the app or its scheduled task runs). Dell SupportAssist and HP Support Assistant may need a moment to start, or show "service not running" until you open them again.')
+# ---------- Autoruns: third-party scheduled tasks and auto-start services (startup apps are built above) ----------
+# Disable only, always undoable: tasks are disabled (not deleted); services go to Manual (Strict mode: Disabled).
+# "Essential" = drivers (anything in DriverStore/System32), audio, touchpad, GPU, peripherals, security, sync, VPN, password managers, remote access, G-Helper, Teams.
+$ESSENTIAL='(?i)driverstore|\\system32\\|realtek|\brtk|rthdvcpl|audio|sound|nahimic|dolby|waves|\bsonic|synaptics|\belan|etdctrl|touchpad|nvidia|\bamd|radeon|\bintel|igfx|graphics|bluetooth|security|defender|antivirus|norton|mcafee|kaspersky|bitdefender|avast|\bavg\b|\beset|malwarebytes|g-?helper|teams|onedrive|dropbox|google ?drive|icloud|bitwarden|1password|keepass|vpn|wireguard|logitech|lghub|razer|corsair|steelseries|wacom|teamviewer|anydesk|rustdesk|parsec|sunshine|\basus|armoury|lenovo|\bhp\b|\bdell|\bacer|\bmsi\b'
+$arSeen=@{}
+try{foreach($tk in @(Get-ScheduledTask -ErrorAction Stop|Where-Object{$_.TaskPath -notlike '\Microsoft\*' -and $_.TaskPath -ne '\DebloatHub\' -and "$($_.Author)" -notmatch 'Microsoft' -and $_.TaskName -notmatch '^NvTm'})){
+  $full=$tk.TaskPath+$tk.TaskName;$nm="Task: $($tk.TaskName)";if($arSeen.ContainsKey($nm)){$nm="Task: $full"};$arSeen[$nm]=1
+  $exe=(@($tk.Actions|ForEach-Object{$_.Execute}|Where-Object{$_}) -join ', ');$trg=(@($tk.Triggers|ForEach-Object{($_.CimClass.CimClassName -replace '^MSFT_Task','' -replace 'Trigger$','')}|Select-Object -Unique) -join ', ')
+  $rk=$(if("$($tk.TaskName) $exe" -match $ESSENTIAL){'Moderate'}else{'Safe'})
+  $db+=fTw $s15 $nm "Scheduled task $full runs: $(if($exe){$exe}else{'(no program)'})$(if($trg){" | when: $trg"})" $rk $sd Any '' @(fTask $full) 'Disabling a task only stops it from running on its own; the program still works when you open it. Re-enable it any time here or in Task Scheduler.'
+  $more[$nm]=@('Updaters, telemetry and "helper" tasks of installed programs. Keep the ones that update security-relevant software (browsers, antivirus) unless you update them yourself.','The task no longer wakes up in the background at its trigger (logon, idle, daily).','The program may not update itself or do its background job (sync, backup, license check) until you run it manually.')}}catch{}
+$covered=@{};foreach($t0 in $db){foreach($a0 in $t0.Acts){if($a0.K -in 'Svc','SvcM'){$covered[$a0.N]=1}}}   # services already handled by a group above
+try{foreach($sv in @(Get-CimInstance Win32_Service -Filter "StartMode='Auto'" -ErrorAction Stop|Where-Object{$_.PathName -and $_.PathName -notmatch ('^"?'+[regex]::Escape($env:SystemRoot)) -and $_.PathName -notmatch '\\Microsoft|Windows Defender|Microsoft Office' -and -not $SVCINFO.Contains($_.Name) -and -not $covered.ContainsKey($_.Name) -and ($asusD+$asusM+@('NVDisplay.ContainerLocalSystem','NvContainerLocalSystem')) -notcontains $_.Name})){
+  $nm="Service: $($sv.DisplayName)";if($arSeen.ContainsKey($nm)){$nm="Service: $($sv.DisplayName) ($($sv.Name))"};$arSeen[$nm]=1
+  $ess=("$($sv.Name) $($sv.DisplayName) $($sv.PathName)" -match $ESSENTIAL)
+  $a=$(if($SvcStrict){fSvc $sv.Name Automatic}else{fSvm $sv.Name Automatic})
+  $db+=fTw $s15 $nm "Third-party service $($sv.Name), starts at boot: $($sv.PathName)" $(if($ess){'Advanced'}else{'Moderate'}) $sd Any '' @($a) $(if($ess){'Looks like a driver, security, sync or hardware service: only change it if you know you do not need it.'}else{"$(if($SvcStrict){'Strict mode: Disabled.'}else{'Manual: it no longer starts at boot, but its program can still start it when needed.'}) Undo restores Automatic."})
+  $more[$nm]=@('Third-party background service. Set it to Manual if you only need it while its program is open.','One less process running from boot; less RAM and background activity.','Features that need the service running all the time (background sync, hardware control, licence checks, remote access) only work after the program starts it, or not at all in Strict mode.')}}catch{}
+
 # fewer svchost.exe processes: Windows gives each service its own svchost when RAM > this threshold (3.5 GB by default)
 $db+=fTw $sSvc 'Group services into fewer svchost processes' 'Raises SvcHostSplitThresholdInKB above any RAM size, so Windows groups related services into shared svchost.exe processes again, as it did before Windows 10 1703 (or on PCs with under 3.5 GB RAM). Reboot needed.' Moderate $sd Any '' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control' SvcHostSplitThresholdInKB 0x7FFFFFFF 3670016) 'Mostly cosmetic: it lowers the process count, not CPU use. Undo restores the original value (default 3.5 GB).'
 $more['Group services into fewer svchost processes']=@('Use it if the long list of "Service Host" processes bothers you or you want a lower process count. It does not make games or apps faster.','Often dozens fewer svchost.exe processes and a little less RAM overhead.','Less isolation: if one service crashes, the others in the same process restart with it; Task Manager can no longer show which single service in a group uses CPU. Some services always keep their own process.')
@@ -679,8 +700,10 @@ $db=@($db|ForEach-Object{$t=$_;$new=$t.Sec;$ord=0
 $secs=@($gk|Where-Object{$g=$_;@($db|Where-Object{$_.Sec -eq $g}).Count})
 
 # ---------- Recommended preset: one explicit, reviewable list ----------
-# Rules: (1) a performance or privacy win, (2) nothing a typical user relies on stops working, (3) undoable with one click
-# (so no app removals and no one-time cleanups). Whole tweak = its name; a single sub-switch = 'Tweak name|Sub-switch label'.
+# Rules: (1) a performance or privacy win, (2) nothing a typical user relies on stops working, (3) undoable with one click,
+# EXCEPT bloat-app removals (Store reinstall only). Kept on purpose: Teams, Quick Assist, Phone Link, Media Player, Movies & TV, Get Help.
+# Entries: 'Tweak name' = whole tweak; 'Tweak name|Sub-switch label' = one sub-switch; 'APP:<package>' = one app wherever it is listed.
+# Startup apps: every entry that does not match $STARTUP_KEEP (drivers, audio, touchpad, GPU, security, sync, G-Helper, Teams...).
 $RECOMMENDED=@(
  'Disable telemetry & diagnostic services','Disable telemetry scheduled tasks','Disable app-compatibility telemetry (Inventory Collector, Steps Recorder)'
  'Disable NVIDIA telemetry (telemetry container, NvTm* tasks, opt-in flag)','Disable Office telemetry (diagnostic data "Neither", legacy Telemetry Agent)'
@@ -695,11 +718,18 @@ $RECOMMENDED=@(
  'Disable Game DVR / background capture','Stop NVIDIA services while the dGPU is off (G-Helper Eco)'
  'Set rarely-used services to start on demand','Third-party updaters & helpers: start on demand'
  'Disable Delivery Optimization (P2P uploads)','Disable device metadata downloads','Disable AutoPlay/AutoRun for removable drives','Disable Remote Assistance'
+ 'Hide taskbar search completely','IP Helper (IPv6 tunnelling)','Diagnostics & troubleshooting services'
+ 'Remove third-party promo apps','Remove more promo games & stubs','Remove 3D / Mixed Reality apps','Remove Xbox apps','Remove Copilot apps'
+ 'APP:Microsoft.BingNews','APP:Microsoft.BingWeather','APP:Microsoft.Getstarted','APP:Microsoft.MicrosoftOfficeHub','APP:Microsoft.MicrosoftSolitaireCollection','APP:Microsoft.WindowsFeedbackHub','APP:Clipchamp.Clipchamp'
+ 'APP:Microsoft.SkypeApp','APP:Microsoft.People','APP:Microsoft.Messaging','APP:Microsoft.Office.Sway','APP:Microsoft.OneConnect','APP:Microsoft.WindowsReadingList','APP:Microsoft.549981C3F5F10'
+ 'APP:Microsoft.OutlookForWindows','APP:microsoft.windowscommunicationsapps','APP:Microsoft.Windows.DevHome','APP:Microsoft.Todos','APP:MicrosoftCorporationII.MicrosoftFamily','APP:Microsoft.BingSearch','APP:Microsoft.MicrosoftJournal'
 )+$vfxRec
-function Is-Rec($u){($RECOMMENDED -contains $u.T.Name) -or ($RECOMMENDED -contains $u.Key)}
+$STARTUP_KEEP=$ESSENTIAL
+function Is-RecAct($a,$t){($a.K -eq 'App' -and ($RECOMMENDED -contains "APP:$($a.N)")) -or ($a.K -eq 'Startup' -and $t.Risk -ne 'Advanced' -and "$($a.N) $($t.Desc)" -notmatch $STARTUP_KEEP)}
+function Is-Rec($u){($RECOMMENDED -contains $u.T.Name) -or ($RECOMMENDED -contains $u.Key) -or (@($u.Acts).Count -eq 1 -and (Is-RecAct @($u.Acts)[0] $u.T))}
 # Simple view "Debloat + Gaming" = Recommended + these (all undoable, nothing laptop-unfriendly like Ultimate Performance)
 $SIMPLE_GAMING=@('Make sure Game Mode is on','Optimizations for windowed games (Windows 11)','Disable mouse acceleration','Disable Sticky Keys prompt','Disable Game Bar','Disable Game DVR / background capture','Edge: put background tabs to sleep sooner|SleepingTabsEnabled','Edge: put background tabs to sleep sooner|SleepingTabsTimeout')
-function Is-RecT($t){($RECOMMENDED -contains $t.Name) -or @($RECOMMENDED|Where-Object{$_.StartsWith("$($t.Name)|",[StringComparison]::Ordinal)}).Count}
+function Is-RecT($t){($RECOMMENDED -contains $t.Name) -or @($RECOMMENDED|Where-Object{$_.StartsWith("$($t.Name)|",[StringComparison]::Ordinal)}).Count -or @($t.Acts|Where-Object{Is-RecAct $_ $t}).Count}
 
 # ---------- Engine ----------
 function Show-Act($a){switch($a.K){
@@ -774,6 +804,8 @@ function Snap-Restore($a,$s){switch($a.K){
    $mode=switch([int]$s.start){0{'boot'}1{'system'}2{if([int]$s.delayed -eq 1){'delayed-auto'}else{'auto'}}3{'demand'}4{'disabled'}}
    $global:LASTEXITCODE=0;& sc.exe config $a.N start= $mode|Out-Null
    if($LASTEXITCODE -ne 0){throw "sc.exe config $($a.N) failed (exit code $LASTEXITCODE)"}
+   $sk="HKLM:\SYSTEM\CurrentControlSet\Services\$($a.N)";$dn=[int](Get-ItemProperty $sk -Name DelayedAutostart -ErrorAction SilentlyContinue).DelayedAutostart
+   if($dn -ne [int]$s.delayed){Set-ItemProperty $sk -Name DelayedAutostart -Value ([int]$s.delayed) -Type DWord}   # keep the flag exactly as it was
    if($s.running -and $mode -ne 'disabled'){try{Start-Service $a.N}catch{Log "   (start type restored; $($a.N) could not be restarted now - it starts when needed or after a reboot)"}}}
  'Task'{if($s.exists -and $s.enabled){$p=Task-Path $a.N;$n=Split-Path $a.N -Leaf
    if(Get-ScheduledTask -TaskPath $p -TaskName $n -ErrorAction SilentlyContinue){Enable-ScheduledTask -TaskPath $p -TaskName $n|Out-Null}else{Log "   (task $n no longer exists - nothing to restore)"}}}
@@ -858,8 +890,8 @@ function Get-SysCheck{
    if($age -gt 180 -and $n -match 'NVIDIA|AMD|Radeon|Intel|Arc'){$out+=@{L='GPU';S='tip';T="$t. Over 6 months old: newer drivers often fix stutter and add game-specific fixes. Get it from NVIDIA / AMD / Intel (on laptops also the laptop maker's site)."}}
    else{$out+=@{L='GPU';S='ok';T=$t}}
    $cur=[int]$v.CurrentRefreshRate;$max=[int]$v.MaxRefreshRate
-   if($cur -gt 0 -and $v.CurrentHorizontalResolution){
-    if($max -gt $cur+5 -and $cur -le 75){$out+=@{L='Display';S='tip';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz, while up to $max Hz is reported. If your screen supports more: Settings > System > Display > Advanced display > Choose a refresh rate. This is one of the most noticeable upgrades for games."}}
+   if($cur -ge 24 -and $cur -le 500 -and $v.CurrentHorizontalResolution){   # virtual GPUs report nonsense (1 Hz): skip those
+    if($max -gt $cur+5 -and $max -le 500 -and $cur -le 75){$out+=@{L='Display';S='tip';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz, while up to $max Hz is reported. If your screen supports more: Settings > System > Display > Advanced display > Choose a refresh rate. This is one of the most noticeable upgrades for games."}}
     else{$out+=@{L='Display';S='info';T="$($v.CurrentHorizontalResolution)x$($v.CurrentVerticalResolution) at $cur Hz"}}}}}catch{}
  try{$m=@(Get-CimInstance Win32_PhysicalMemory -ErrorAction Stop)
   if($m.Count){
@@ -867,11 +899,11 @@ function Get-SysCheck{
    $cfg=[int](($m|Where-Object{$_.ConfiguredClockSpeed}|Measure-Object ConfiguredClockSpeed -Minimum).Minimum)
    $rated=[int](($m|Measure-Object Speed -Maximum).Maximum)
    $type=switch([int]@($m)[0].SMBIOSMemoryType){26{'DDR4'}34{'DDR5'}35{'LPDDR5'}30{'LPDDR4'}default{''}}
-   $pn=(@($m|ForEach-Object{("$($_.Manufacturer) $($_.PartNumber)").Trim()}|Where-Object{$_}|Select-Object -Unique) -join ', ')
-   $t="$gb GB $type at $cfg MT/s, $($m.Count) module(s)$(if($pn){" ($pn)"})"
+   $pn=(@($m|ForEach-Object{("$($_.Manufacturer) $($_.PartNumber)" -replace '\b(None|Undefined|Unknown|To be filled by O\.E\.M\.)\b','').Trim()}|Where-Object{$_ -and $_ -notmatch '^Microsoft Corporation$'}|Select-Object -Unique) -join ', ')
+   $t="$gb GB$(if($type){" $type"})$(if($cfg -gt 0){" at $cfg MT/s"}), $($m.Count) module(s)$(if($pn){" ($pn)"})"
    $base=($type -eq 'DDR4' -and $cfg -le 2400) -or ($type -eq 'DDR5' -and $cfg -le 4800)
-   if($rated -gt $cfg+50){$out+=@{L='RAM';S='tip';T="$t. The modules report $rated MT/s but run slower. $(if($laptop){'On laptops the maker usually fixes the speed.'}else{'Enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS.'})"}}
-   elseif($base -and -not $laptop){$out+=@{L='RAM';S='tip';T="$t. That is the safe default (JEDEC) speed. If your RAM is rated faster (search the part number), enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS: often a 10-20% gain in CPU-heavy games, especially on Ryzen."}}
+   if($cfg -gt 0 -and $rated -gt $cfg+50){$out+=@{L='RAM';S='tip';T="$t. The modules report $rated MT/s but run slower. $(if($laptop){'On laptops the maker usually fixes the speed.'}else{'Enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS.'})"}}
+   elseif($cfg -gt 0 -and $base -and -not $laptop){$out+=@{L='RAM';S='tip';T="$t. That is the safe default (JEDEC) speed. If your RAM is rated faster (search the part number), enable XMP (Intel) or EXPO / DOCP (AMD) in the BIOS: often a 10-20% gain in CPU-heavy games, especially on Ryzen."}}
    else{$out+=@{L='RAM';S='ok';T=$t}}
    if($gb -lt 8){$out+=@{L='RAM';S='tip';T="Only $gb GB of RAM: more memory is the single biggest upgrade for this PC."}}
    if($m.Count -eq 1 -and -not $laptop){$out+=@{L='RAM';S='tip';T='One memory module = single channel. Two matching modules (dual channel) can raise FPS noticeably on integrated and CPU-limited systems.'}}}}catch{}
@@ -1095,7 +1127,7 @@ function Run{
  $msg="Apply $($add.Count) change(s) and revert $($rem.Count)?";$ic='Question'
  if($one.Count){$ic='Warning';$msg+="`n`nRun-once actions (cannot be undone):`n - "+(($one|ForEach-Object{$_.Key -replace '\|',' > '}) -join "`n - ")
   if($add.Count -gt $one.Count -and @($one|Where-Object{$_.Key -match 'SFC|DISM|component cleanup'}).Count){$msg+="`n`nSFC/DISM can take 10+ minutes and work best on their own."}}
- $nr=@($rem|Where-Object{@($_.Acts|Where-Object{(Act-Revertible $_) -and $_.K -ne 'Cmd' -and -not(Snap-Read $_)}).Count}|ForEach-Object{$_.Key -replace '\|',' > '})
+ $nr=@($rem|Where-Object{@($_.Acts|Where-Object{(Act-Revertible $_) -and $_.K -ne 'Cmd'}).Count -and -not @($_.Acts|Where-Object{$_.K -ne 'Cmd' -and (Snap-Read $_)}).Count}|ForEach-Object{$_.Key -replace '\|',' > '})
  if($nr.Count){$ic='Warning';$msg+="`n`nNo recorded original for:`n - "+($nr -join "`n - ")+"`nThese were already applied before DebloatHub recorded anything (or by another tool), so undo sets Windows' documented default instead."}
  $wn=@($add|ForEach-Object{$_.T.Name}|Select-Object -Unique|Where-Object{$warnBy.ContainsKey($_)})
  if($wn.Count){$ic='Warning';$msg+="`n`nRead before continuing:";foreach($n in $wn){$msg+="`n - $($n): $($warnBy[$n])"}}
@@ -1113,7 +1145,7 @@ function Invoke-Now($t,$undo){                  # runs ONE tweak right away thro
   $msg="Revert the $ya applied part(s) of '$nm' now?`n`nParts that are not applied are left untouched. Each part goes back to what was there before DebloatHub changed it."
   $irr=@($t.Acts|Where-Object{-not(Act-Revertible $_)}).Count
   if($irr){$msg+="`n`n$irr part(s) cannot be undone automatically (removed apps / run-once commands) and are skipped."}
-  $nr=0;for($i=0;$i -lt @($t.Acts).Count;$i++){$a=@($t.Acts)[$i];if($parts[$i] -eq 'Y' -and (Act-Revertible $a) -and $a.K -ne 'Cmd' -and -not(Snap-Read $a)){$nr++}}
+  $nr=0;$anyRec=[bool]@($t.Acts|Where-Object{$_.K -ne 'Cmd' -and (Snap-Read $_)}).Count;if(-not $anyRec){for($i=0;$i -lt @($t.Acts).Count;$i++){$a=@($t.Acts)[$i];if($parts[$i] -eq 'Y' -and (Act-Revertible $a) -and $a.K -ne 'Cmd'){$nr++}}}
   if($nr){$msg+="`n`nNo recorded original for $nr part(s): for those, undo sets Windows' documented default."}}
  else{$msg="Apply the $na missing part(s) of '$nm' now?"}
  if(-not $dry -and [Windows.MessageBox]::Show($msg,'DebloatHub','YesNo','Question') -ne 'Yes'){return}
@@ -1251,14 +1283,18 @@ if($rp){$sync.Msg='Creating restore point...';Log 'Creating restore point...'
 if($res.RpFailed){Log 'Nothing was changed, because the restore point you asked for could not be created.';$items=@()}   # never apply without the safety net the user asked for
 foreach($it in $items){$n++;$sync.Msg="Working $n of ${tot}: $($it.Label)";Log $it.Label
  $bad=@();$did=0
+ $own=$it.Undo -and [bool]@($it.Acts|Where-Object{$_.K -notin 'App','Cmd' -and (Snap-Read $_)}).Count   # DebloatHub recorded originals for this switch
  foreach($a in $it.Acts){Log "   $(Show-Act $a)";if($dry){continue}
   try{
    if($it.Undo -and -not(Act-Revertible $a)){Log '   = cannot be undone automatically - left as is';continue}
    if($it.Undo -and (Act-Absent $a)){Log '   = not present on this PC - nothing to restore';continue}
+   if($own -and $a.K -notin 'App','Cmd' -and -not(Snap-Read $a)){Log '   = was already like this before DebloatHub changed the rest - left as is';continue}
    $before=Safe-Test $a
    if(-not $it.Undo -and $before -eq $true){Log '   = already applied - nothing to do';continue}                 # apply is idempotent
    if($it.Undo -and $before -eq $false){Log '   = not currently applied - left untouched';continue}             # revert touches only what is applied
-   if($it.Undo){Undo-Act $a}else{Snap-Take $a $before;Do-Act $a $false}
+   $fresh=(-not $it.Undo) -and -not(Snap-Read $a)
+   try{if($it.Undo){Undo-Act $a}else{Snap-Take $a $before;Do-Act $a $false}}
+   catch{if($fresh){Snap-Clear $a};throw}                                                                        # failed apply: drop the record it just wrote
    $after=Safe-Test $a                                                                                          # verify against the real system, do not trust "no exception"
    if($null -ne $after -and $after -eq [bool]$it.Undo){throw "the change did not take effect (the setting is still $(if($it.Undo){'applied'}else{'not applied'}))"}
    $did++}
@@ -1433,7 +1469,7 @@ $xaml=@'
     <Button x:Name="bExp" Content="Save selection" Style="{StaticResource Btn}"/><Button x:Name="bImp" Content="Load selection" Style="{StaticResource Btn}"/></WrapPanel>
    <Border CornerRadius="6" Background="#1A1A1A"><TextBox x:Name="log" Height="96" IsReadOnly="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Background="Transparent" Foreground="#CFCFCF" BorderThickness="0" Padding="8"/></Border></StackPanel></Border>
  </Grid>
- <Border x:Name="ld" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,16,26,0" Background="#2B2B2B" BorderBrush="#4CC2FF" BorderThickness="1" CornerRadius="18" Padding="12,7,16,7">
+ <Border x:Name="ld" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,44,30" Background="#2B2B2B" BorderBrush="#4CC2FF" BorderThickness="1" CornerRadius="18" Padding="12,7,16,7">
   <StackPanel Orientation="Horizontal"><Grid Width="18" Height="18" RenderTransformOrigin="0.5,0.5" Margin="0,0,10,0"><Grid.RenderTransform><RotateTransform x:Name="rot"/></Grid.RenderTransform>
    <Grid.Triggers><EventTrigger RoutedEvent="FrameworkElement.Loaded"><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="rot" Storyboard.TargetProperty="Angle" From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/></Storyboard></BeginStoryboard></EventTrigger></Grid.Triggers>
    <Path Data="M 9,2 A 7,7 0 1 1 2,9" Stroke="#4CC2FF" StrokeThickness="2.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/></Grid>
@@ -1445,7 +1481,7 @@ $xaml=@'
    <UniformGrid Columns="2" Height="190">
     <Button x:Name="chSimple" Style="{StaticResource Card}"><StackPanel>
      <TextBlock Text="Simple" FontSize="24" FontWeight="SemiBold"/>
-     <TextBlock Text="A few big buttons. Removes ads, telemetry and background junk in one click. Safe and fully undoable." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/>
+     <TextBlock Text="A few big buttons. Removes ads, telemetry, bloat apps and background junk in one click. Everything except removed apps can be undone." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/>
      <TextBlock Text="Best for most people" Foreground="#4CC2FF" FontSize="12" Margin="0,14,0,0"/></StackPanel></Button>
     <Button x:Name="chAdv" Style="{StaticResource Card}"><StackPanel>
      <TextBlock Text="Advanced" FontSize="24" FontWeight="SemiBold"/>
@@ -1464,7 +1500,7 @@ $xaml=@'
     <Button x:Name="bRec" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tRec" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
      <StackPanel><TextBlock Text="Debloat" FontSize="22" FontWeight="SemiBold"/>
-      <TextBlock Text="Turns off ads, telemetry, Widgets and background junk. Everything you use keeps working." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+      <TextBlock Text="Turns off ads, telemetry, Widgets, startup junk and bloat apps (Teams and essentials are kept)." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
     <Button x:Name="bGame" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tGame" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
      <StackPanel><TextBlock Text="Debloat + Gaming" FontSize="22" FontWeight="SemiBold"/>
@@ -1472,7 +1508,7 @@ $xaml=@'
     <Button x:Name="bUndo" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tUndo" DockPanel.Dock="Bottom" Foreground="#FFB74D" FontSize="13" Margin="0,10,0,0"/>
      <StackPanel><TextBlock Text="Undo" FontSize="22" FontWeight="SemiBold"/>
-      <TextBlock Text="Puts back everything DebloatHub changed on this PC." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+      <TextBlock Text="Puts back everything DebloatHub changed. Removed apps come back from the Microsoft Store." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
    </UniformGrid>
    <WrapPanel Grid.Row="3" Margin="8,14,0,10">
     <CheckBox x:Name="sRP" Style="{StaticResource Sw}" Content="Create a restore point first" IsChecked="True" Margin="0,0,24,6"/>
@@ -1487,7 +1523,7 @@ $xaml=@'
 $w=[Windows.Markup.XamlReader]::Parse($xaml)
 $w.Title="DebloatHub v$AppVersion"
 'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bGame','bUndo','tRec','tGame','tUndo','sRP','lnkShow','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
-$pSafe.ToolTip='Recommended: performance and privacy tweaks that keep every common feature working and can all be undone with one click (no app removals, no cleanups). Tweaks in this preset carry a "Recommended" badge.'
+$pSafe.ToolTip='Recommended: performance and privacy tweaks, bloat-app removal (Teams, Quick Assist, Phone Link and media players are kept) and non-essential startup apps off. Everything except the removed apps can be undone with one click. Tweaks in this preset carry a "Recommended" badge.'
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
 $bc=New-Object Windows.Media.BrushConverter
 function Badge($t,$c,$tip){$b=New-Object Windows.Controls.Border;$b.Background=$bc.ConvertFromString($c)
@@ -1506,6 +1542,7 @@ foreach($sec in $secs){
  $hd=New-Object Windows.Controls.DockPanel;$hd.Margin=[Windows.Thickness]::new(8,0,8,8)
  $cn=New-Object Windows.Controls.TextBlock;$cn.FontSize=12;$cn.VerticalAlignment='Center';$cn.Foreground=$accent;[Windows.Controls.DockPanel]::SetDock($cn,'Right');[void]$hd.Children.Add($cn);$secCnt+=$cn
  $h=New-Object Windows.Controls.TextBlock;$h.Text=$sec;$h.FontSize=17;$h.FontWeight=[Windows.FontWeights]::SemiBold;[void]$hd.Children.Add($h);[void]$sp.Children.Add($hd)
+ if($sec -eq $s15){$an=New-Object Windows.Controls.TextBlock;$an.Text='Everything that starts automatically: startup apps, third-party scheduled tasks and auto-start services. Switching one ON only disables it (services: start on demand); nothing is deleted, and switching it OFF restores it.';$an.FontSize=11;$an.TextWrapping='Wrap';$an.Foreground=$bc.ConvertFromString('#9A9A9A');$an.Margin=[Windows.Thickness]::new(8,0,8,10);[void]$sp.Children.Add($an)}
  if($sec -eq 'Performance & Gaming'){$sc0=New-Object Windows.Controls.Border;$sc0.Background=$bc.ConvertFromString('#232323');$sc0.CornerRadius=New-Object Windows.CornerRadius 8;$sc0.Padding=[Windows.Thickness]::new(14,10,14,10);$sc0.Margin=[Windows.Thickness]::new(8,0,8,12)
   $scs=New-Object Windows.Controls.StackPanel;$sch=New-Object Windows.Controls.TextBlock;$sch.Text='System check (read-only)';$sch.FontWeight=[Windows.FontWeights]::SemiBold;$sch.FontSize=13;[void]$scs.Children.Add($sch)
   $scn=New-Object Windows.Controls.TextBlock;$scn.Text='Things DebloatHub cannot change but that often matter more than any tweak. Checked during every scan.';$scn.FontSize=11;$scn.Foreground=$bc.ConvertFromString('#9A9A9A');$scn.TextWrapping='Wrap';$scn.Margin=[Windows.Thickness]::new(0,2,0,6);[void]$scs.Children.Add($scn)
@@ -1702,4 +1739,5 @@ if($Screenshot){$startView='simple'}
 Show-View $startView
 $w.Add_Closing({param($s,$e) if($script:busy -and [Windows.MessageBox]::Show('A job is still running. Close anyway?','DebloatHub','YesNo') -ne 'Yes'){$e.Cancel=$true}})
 $w.Add_ContentRendered({if(-not $ShowConsole){try{[void][DH.Win]::ShowWindow([DH.Win]::GetConsoleWindow(),0)}catch{}};Warn-OtherUser;Show-EditionNote;Scan})
+if($NoShow){return}
 [void]$w.ShowDialog()
