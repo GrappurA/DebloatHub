@@ -1,0 +1,38 @@
+name: Bug report
+description: Something did not work, broke a feature, or was reported wrongly
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: DebloatHub version
+      description: Shown in the window title, e.g. v1.1.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version, build and edition
+      description: Top left of the window shows the build, e.g. "Windows 11 (build 26100)", plus Home / Pro / Enterprise
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Which tweak or switch, what you expected, what happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: From %ProgramData%\DebloatHub\Logs (remove anything private)
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: This is not a security vulnerability (those go to SECURITY.md, privately)
+          required: true

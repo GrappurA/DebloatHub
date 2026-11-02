@@ -1,0 +1,34 @@
+name: Refresh README screenshots
+
+# Actions tab > "Refresh README screenshots" > Run workflow. Renders the current window on a Windows runner
+# and commits docs/screenshot.png and docs/screenshot-simple.png to the branch you ran it on.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Render the Advanced and Simple views
+        shell: powershell
+        run: |
+          $job = Start-Job { powershell -NoProfile -ExecutionPolicy Bypass -File "$using:PWD\DebloatHub.ps1" -Screenshot "$using:PWD\docs" }
+          if (-not (Wait-Job $job -Timeout 240)) { Stop-Job $job; throw 'screenshot run timed out' }
+          Receive-Job $job
+          if (-not (Test-Path docs\screenshot-simple.png)) { throw 'no screenshot was rendered' }
+
+      - name: Commit the screenshots
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshot.png docs/screenshot-simple.png
+          if git diff --cached --quiet; then echo "No change"; exit 0; fi
+          git commit -m "docs: refresh screenshots"
+          git push

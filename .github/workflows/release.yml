@@ -11,7 +11,11 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -63,7 +67,9 @@ jobs:
             cat changes.md
             echo ""
             echo "---"
-            echo "\`SHA256SUMS.txt\` lists the checksums of the files. Full documentation: [README](https://github.com/GrappurA/DebloatHub#readme)"
+            echo "\`SHA256SUMS.txt\` lists the checksums of the files. To check your download, run this in PowerShell in the download folder and compare: \`Get-FileHash DebloatHub.zip\`"
+            echo ""
+            echo "Full documentation: [README](https://github.com/GrappurA/DebloatHub#readme)"
           } > notes.md
 
       - name: Publish release

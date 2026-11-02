@@ -21,6 +21,10 @@ Click "More info" and then "Run anyway".
 To avoid it, before extracting: right-click DebloatHub.zip > Properties >
 tick "Unblock" (bottom of the General tab) > OK, then extract.
 
+To check the download, run this in PowerShell in the download folder and
+compare the result with SHA256SUMS.txt on the release page:
+    Get-FileHash DebloatHub.zip
+
 FIRST USE
 ---------
 - Hover a switch to see what it does, who needs it, its pros and cons and
@@ -49,7 +53,15 @@ UNINSTALLING
 1. Switch OFF every tweak you want restored and press Apply.
 2. Delete the DebloatHub folder.
 3. Optional: delete the registry key HKEY_LOCAL_MACHINE\SOFTWARE\DebloatHub
+   and the folder %ProgramData%\DebloatHub
    (after that, undo can only use Windows defaults).
+
+COMMAND LINE (NO WINDOW)
+------------------------
+From an administrator PowerShell window in this folder:
+    .\DebloatHub.ps1 -Preset Debloat      (or Gaming, or Undo)
+    .\DebloatHub.ps1 -Selection my-selection.json
+Add -DryRun to only list what would change.
 
 TROUBLESHOOTING
 ---------------
@@ -57,6 +69,10 @@ TROUBLESHOOTING
     powershell -ExecutionPolicy Bypass -File .\DebloatHub.ps1 -ShowConsole
   The console stays open and shows the error.
 - Startup errors are also saved to %TEMP%\DebloatHub-error.log
+- Every session is logged to %ProgramData%\DebloatHub\Logs
+- "No restore point could be created": turn on System Protection for C:
+  (System Properties > System Protection), or switch off "Restore point
+  first" to continue without one.
 - Your antivirus flags it: debloat tools change system settings, which some
   antivirus programs report as suspicious. The full source is the
   DebloatHub.ps1 file in this folder and on GitHub.

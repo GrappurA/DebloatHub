@@ -1,18 +1,45 @@
 #Requires -Version 5.1
 # DebloatHub - curated, previewable, reversible Windows tweaks in one GUI.
 # Run: right-click > "Run with PowerShell" (auto-elevates). Try it in a VM first.
-param([switch]$Elevated,[switch]$ShowConsole)
+param([switch]$Elevated,[switch]$ShowConsole,
+ # Unattended mode (no window): -Preset Debloat|Gaming|Undo, or -Selection <file saved with "Save selection">. Add -DryRun to preview, -NoRestorePoint to skip the restore point.
+ [ValidateSet('Debloat','Gaming','Undo')][string]$Preset,[string]$Selection,[switch]$DryRun,[switch]$NoRestorePoint,
+ # -Screenshot <folder>: renders the Advanced and Simple views to PNG files after the first scan, then closes (used by CI to refresh the README screenshots)
+ [string]$Screenshot)
 $AppVersion='1.1.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
 $MyPath=$PSCommandPath
+$Headless=[bool]($Preset -or $Selection)
+if($Selection){$Selection=[IO.Path]::GetFullPath($Selection)}   # the elevated copy may start in another folder
 $isAdmin=(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if(-not $isAdmin -and -not $Elevated){
+# 32-bit PowerShell on 64-bit Windows sees a redirected registry (WOW6432Node): policies would be written where Windows never reads them,
+# and the verification would read the same wrong place and report success. Always run the 64-bit (native) PowerShell.
+$Wow=[Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess
+$PSExe=if($Wow){"$env:SystemRoot\Sysnative\WindowsPowerShell\v1.0\powershell.exe"}else{"$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"}
+function Get-RelaunchArgs{
+ $x="-NoProfile $(if($ShowConsole -or $Headless){'-NoExit '})-ExecutionPolicy Bypass -File `"$MyPath`" -Elevated"
+ if($ShowConsole){$x+=' -ShowConsole'};if($Preset){$x+=" -Preset $Preset"};if($Selection){$x+=" -Selection `"$Selection`""}
+ if($DryRun){$x+=' -DryRun'};if($NoRestorePoint){$x+=' -NoRestorePoint'};$x}
+if($Wow -or (-not $isAdmin -and -not $Elevated)){
   # Normal run: console hidden. Add -ShowConsole to keep the console visible for troubleshooting.
-  Start-Process powershell -Verb RunAs -WindowStyle $(if($ShowConsole){'Normal'}else{'Hidden'}) -ArgumentList "-NoProfile $(if($ShowConsole){'-NoExit '})-ExecutionPolicy Bypass -File `"$PSCommandPath`" -Elevated$(if($ShowConsole){' -ShowConsole'})"; exit }
+  $spa=@{FilePath=$PSExe;WindowStyle=$(if($ShowConsole -or $Headless){'Normal'}else{'Hidden'});ArgumentList=(Get-RelaunchArgs)}
+  if(-not $isAdmin){$spa.Verb='RunAs'}
+  try{Start-Process @spa -ErrorAction Stop}catch{Add-Type -AssemblyName PresentationFramework;[void][Windows.MessageBox]::Show("DebloatHub needs administrator rights. Start it again and click Yes in the Windows prompt.`n`n$($_.Exception.Message)",'DebloatHub')}
+  exit }
 Add-Type -AssemblyName PresentationFramework
 if(-not $isAdmin){[Windows.MessageBox]::Show('Administrator rights are required.')|Out-Null;exit}
 $ErrorActionPreference='Stop'
-trap{$m="$_`r`n$($_.ScriptStackTrace)";Set-Content "$env:TEMP\DebloatHub-error.log" $m;Write-Host $m -ForegroundColor Red;[Windows.MessageBox]::Show("Startup error (also saved to %TEMP%\DebloatHub-error.log):`n`n$_")|Out-Null;break}
+trap{$m="$_`r`n$($_.ScriptStackTrace)";Set-Content "$env:TEMP\DebloatHub-error.log" $m;Write-Host $m -ForegroundColor Red;if(-not $Headless){[Windows.MessageBox]::Show("Startup error (also saved to %TEMP%\DebloatHub-error.log):`n`n$_")|Out-Null};if($Headless){exit 2};break}
+# One instance at a time: two copies applying at once would overwrite each other's undo records.
+$script:Mutex=New-Object Threading.Mutex($false,'Global\DebloatHub-SingleInstance')
+$gotMutex=$false;try{$gotMutex=$script:Mutex.WaitOne(5000)}catch [Threading.AbandonedMutexException]{$gotMutex=$true}   # abandoned = the previous copy crashed: the mutex is ours now
+if(-not $gotMutex){if($Headless){Write-Host 'DebloatHub is already running. Close it first.' -ForegroundColor Red;exit 3};[void][Windows.MessageBox]::Show('DebloatHub is already running. Close the other window first.','DebloatHub');exit}
+# Every log line is also written to a file, so there is a record of what was changed after the window is closed.
+$LogDir="$env:ProgramData\DebloatHub\Logs";$LogFile=$null
+try{if(-not(Test-Path -LiteralPath $LogDir)){New-Item $LogDir -ItemType Directory -Force|Out-Null};$LogFile=Join-Path $LogDir ('DebloatHub-{0:yyyy-MM-dd}.log' -f (Get-Date))
+ Get-ChildItem -LiteralPath $LogDir -Filter 'DebloatHub-*.log' -ErrorAction SilentlyContinue|Where-Object LastWriteTime -lt (Get-Date).AddDays(-90)|Remove-Item -Force -ErrorAction SilentlyContinue   # keep 90 days
+ [IO.File]::AppendAllText($LogFile,("`r`n===== DebloatHub v{0} started {1:yyyy-MM-dd HH:mm:ss} as {2} =====`r`n" -f $AppVersion,(Get-Date),[Security.Principal.WindowsIdentity]::GetCurrent().Name))}catch{$LogFile=$null}
 $build=[Environment]::OSVersion.Version.Build; $W11=$build -ge 22000
+$HasBattery=$false;try{$HasBattery=[bool](Get-CimInstance Win32_Battery -ErrorAction Stop)}catch{$HasBattery=$false}   # laptops: some presets skip desktop-only items
 
 # ---------- Signed-in user: UAC may elevate to a DIFFERENT admin account, whose HKCU/APPDATA are not the user's ----------
 # Per-user switches are redirected to HKEY_USERS\<SID of the account that owns explorer.exe in this session>.
@@ -37,7 +64,7 @@ function fApp($n){@{K='App';N=$n}}
 function fTask($n){@{K='Task';N=$n}}
 function fSvm($n,$u){@{K='SvcM';N=$n;U=$u}}                                  # U=original start type; target = Manual
 function fFeat($n){@{K='Feat';N=$n}}
-function fCmd($c,$u=$null,$t=$null){@{K='Cmd';V=$c;U=$u;T=$t}}                              # one-shot command (U = optional undo command)
+function fCmd($c,$u=$null,$t=$null,$n=$null,$old=@()){@{K='Cmd';V=$c;U=$u;T=$t;N=$n;Old=@($old)}}   # one-shot command (U = optional undo command, T = detector, N = label, Old = marker ids of older versions of this command)
 function fTw($sec,$name,$desc,$risk,$src,$win,$prof,$acts,$rec=''){[pscustomobject]@{Sec=$sec;Name=$name;Desc=$desc;Risk=$risk;Src=$src;Win=[string]$win;Prof=$prof;Acts=@($acts);Rec=$rec}}
 
 $CDM='HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
@@ -54,7 +81,7 @@ $nvTasks=@(try{Get-ScheduledTask -TaskPath '\' -ErrorAction Stop|Where-Object{$_
 
 $db=@(
 fTw $s1 'Disable telemetry & diagnostic services' 'Lowers Windows diagnostic data to the minimum your edition allows (Off on Enterprise/Education, "Required" on Home/Pro), limits extra log and crash-dump uploads, stops OneSettings config downloads and disables the Connected User Experiences (DiagTrack) and WAP push services.' Safe 'WinUtil, Win11Debloat, Sophia, W10Debloater' Any 'safe,privacy,telemetry' @((fReg "$POL\DataCollection" AllowTelemetry 0 $null),(fReg "$POL\DataCollection" LimitDiagnosticLogCollection 1 $null),(fReg "$POL\DataCollection" LimitDumpCollection 1 $null),(fReg "$POL\DataCollection" DisableOneSettingsDownloads 1 $null),(fSvc DiagTrack Automatic),(fSvc dmwappushservice Manual))
-fTw $s1 'Disable telemetry scheduled tasks' 'Turns off the scheduled tasks that collect compatibility, usage, disk-health and feedback data (Compatibility Appraiser, CEIP, Program Data Updater, disk diagnostics, error-report queue, feedback). Tasks missing on your build are skipped.' Safe 'WinUtil, W10Debloater, W4RH4WK' Any 'safe,privacy,telemetry' @((fTask '\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser'),(fTask '\Microsoft\Windows\Application Experience\ProgramDataUpdater'),(fTask '\Microsoft\Windows\Application Experience\StartupAppTask'),(fTask '\Microsoft\Windows\Application Experience\PcaPatchDbTask'),(fTask '\Microsoft\Windows\Customer Experience Improvement Program\Consolidator'),(fTask '\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip'),(fTask '\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask'),(fTask '\Microsoft\Windows\Autochk\Proxy'),(fTask '\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector'),(fTask '\Microsoft\Windows\Windows Error Reporting\QueueReporting'),(fTask '\Microsoft\Windows\Feedback\Siuf\DmClient'),(fTask '\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload'))
+fTw $s1 'Disable telemetry scheduled tasks' 'Turns off the scheduled tasks that collect compatibility, usage, disk-health and feedback data (Compatibility Appraiser, CEIP, Program Data Updater, disk diagnostics, error-report queue, feedback, MareBackup and Device Information). Tasks missing on your build are skipped.' Safe 'WinUtil, W10Debloater, W4RH4WK' Any 'safe,privacy,telemetry' @((fTask '\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser'),(fTask '\Microsoft\Windows\Application Experience\ProgramDataUpdater'),(fTask '\Microsoft\Windows\Application Experience\StartupAppTask'),(fTask '\Microsoft\Windows\Application Experience\PcaPatchDbTask'),(fTask '\Microsoft\Windows\Customer Experience Improvement Program\Consolidator'),(fTask '\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip'),(fTask '\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask'),(fTask '\Microsoft\Windows\Autochk\Proxy'),(fTask '\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector'),(fTask '\Microsoft\Windows\Windows Error Reporting\QueueReporting'),(fTask '\Microsoft\Windows\Feedback\Siuf\DmClient'),(fTask '\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload'),(fTask '\Microsoft\Windows\Application Experience\MareBackup'),(fTask '\Microsoft\Windows\Device Information\Device'),(fTask '\Microsoft\Windows\Device Information\Device User'))
 fTw $s1 'Disable app-compatibility telemetry (Inventory Collector, Steps Recorder)' 'Group Policy switches that stop Windows inventorying your installed programs and files for Microsoft, sending application-impact telemetry, and collecting Steps Recorder data.' Safe 'DebloatHub' Any 'safe,privacy,telemetry' @((fReg "$POL\AppCompat" AITEnable 0 $null),(fReg "$POL\AppCompat" DisableInventory 1 $null),(fReg "$POL\AppCompat" DisableUAR 1 $null))
 fTw $s1 'Disable NVIDIA telemetry (telemetry container, NvTm* tasks, opt-in flag)' 'Stops the NVIDIA Telemetry Container service (older drivers), the NvTmMon / NvTmRep / NvTmRepOnLogon scheduled tasks and sets the NVIDIA control-panel opt-in flag to "no". Does nothing on PCs without NVIDIA drivers. These settings are community-documented; NVIDIA publishes no official switch.' Safe 'DebloatHub' Any 'safe,privacy,telemetry' (@((fSvc NvTelemetryContainer Automatic),(fReg 'HKLM:\SOFTWARE\NVIDIA Corporation\NvControlPanel2\Client' OptInOrOutPreference 0 $null DWord $true),(fReg 'HKCU:\Software\NVIDIA Corporation\NvControlPanel2\Client' OptInOrOutPreference 0 $null DWord $true))+$nvTasks)
 fTw $s1 'Disable Office telemetry (diagnostic data "Neither", legacy Telemetry Agent)' 'Per-user Office policies: diagnostic data level "Neither" (SendTelemetry=3), Telemetry Agent logging and upload off, plus the four Office Telemetry Agent scheduled tasks. Required service data is still sent. The Telemetry Agent itself was removed from Microsoft 365 Apps in version 2301, so those parts only matter for older Office.' Safe 'DebloatHub' Any 'safe,privacy,telemetry' @((fReg 'HKCU:\Software\Policies\Microsoft\office\common\clienttelemetry' SendTelemetry 3 $null),(fReg 'HKCU:\Software\Policies\Microsoft\Office\16.0\osm' Enablelogging 0 $null),(fReg 'HKCU:\Software\Policies\Microsoft\Office\16.0\osm' EnableUpload 0 $null),(fTask '\Microsoft\Office\OfficeTelemetryAgentFallBack'),(fTask '\Microsoft\Office\OfficeTelemetryAgentLogOn'),(fTask '\Microsoft\Office\OfficeTelemetryAgentFallBack2016'),(fTask '\Microsoft\Office\OfficeTelemetryAgentLogOn2016'))
@@ -72,13 +99,13 @@ fTw $s8 'Remove third-party promo apps' 'Uninstalls pre-installed promotional ap
 fTw $s7 'Remove Xbox apps' 'Uninstalls the Xbox app, Game Bar (Win+G), Xbox overlays and Xbox identity/speech components. Each package can be picked individually.' Moderate 'WinUtil, Win11Debloat' Any '' @('Microsoft.GamingApp','Microsoft.XboxApp','Microsoft.XboxGamingOverlay','Microsoft.XboxGameOverlay','Microsoft.Xbox.TCUI','Microsoft.XboxSpeechToTextOverlay'|ForEach-Object{fApp $_}) 'Do not run if you use Xbox Game Pass, PC cloud saves, or Win+G Game Bar.'
 fTw $s9 'Remove 3D / Mixed Reality apps' 'Uninstalls 3D Builder, 3D Viewer, Print 3D and the Mixed Reality Portal.' Safe 'W10Debloater, W4RH4WK' Any 'safe' @('Microsoft.3DBuilder','Microsoft.Microsoft3DViewer','Microsoft.Print3D','Microsoft.MixedReality.Portal'|ForEach-Object{fApp $_})
 
-fTw $s3 'Disable Start/Settings suggestions & silent app installs' 'Stops Windows promoting apps in Start, Settings and the Start menu, and stops it installing "suggested" apps (games, Spotify and so on) in the background.' Safe 'WinUtil, Win11Debloat, Sophia, W10Debloater' Any 'safe,privacy' ('SubscribedContent-338388Value','SubscribedContent-338389Value','SubscribedContent-353696Value','SystemPaneSuggestionsEnabled','SilentInstalledAppsEnabled','PreInstalledAppsEnabled','OemPreInstalledAppsEnabled'|ForEach-Object{fReg $CDM $_ 0 1})
+fTw $s3 'Disable Start/Settings suggestions & silent app installs' 'Stops Windows promoting apps in Start, Settings and the Start menu, the suggested content in Settings, the "welcome experience" after updates and the "finish setting up your device" screen, and stops it installing "suggested" apps (games, Spotify and so on) in the background.' Safe 'WinUtil, Win11Debloat, Sophia, W10Debloater' Any 'safe,privacy' @(('SubscribedContent-338388Value','SubscribedContent-338389Value','SubscribedContent-353696Value','SubscribedContent-338393Value','SubscribedContent-353694Value','SubscribedContent-310093Value','SystemPaneSuggestionsEnabled','SilentInstalledAppsEnabled','PreInstalledAppsEnabled','OemPreInstalledAppsEnabled'|ForEach-Object{fReg $CDM $_ 0 1})+@(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\UserProfileEngagement' ScoobeSystemSettingEnabled 0 1))
 fTw $s3 'Disable lock screen tips & ads' 'Removes "fun facts", tips and promotions from the lock screen. Your picture or Spotlight image stays.' Safe 'Win11Debloat, Sophia' Any 'safe' ('RotatingLockScreenOverlayEnabled','SubscribedContent-338387Value'|ForEach-Object{fReg $CDM $_ 0 1})
 fTw $s3 'Disable Widgets' 'Turns off Widgets (Win+W) by policy: the taskbar weather button and the news/widgets board disappear.' Safe 'WinUtil, Win11Debloat' 11 'safe' @(fReg 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' AllowNewsAndInterests 0 $null)
 fTw $s3 'Disable News and Interests' 'Removes the Windows 10 taskbar weather/news button (News and Interests) by policy.' Safe 'WinUtil, W10Debloater' 10 'safe' @(fReg "$POL\Windows Feeds" EnableFeeds 0 $null)
 
 fTw $s12 'Disable Delivery Optimization (P2P uploads)' 'Sets the Delivery Optimization policy to HTTP-only: Windows downloads updates and Store apps straight from Microsoft and never uploads them to other PCs (on your network or the internet).' Safe 'WinUtil, Win11Debloat, W10Debloater' Any 'safe' @(fReg "$POL\DeliveryOptimization" DODownloadMode 0 $null)
-fTw $s11 'Disable Game DVR / background capture' 'Turns off Game DVR background recording ("Record what happened") and app capture.' Safe 'WinUtil, Win11Debloat, Sophia' Any 'gaming' @((fReg 'HKCU:\System\GameConfigStore' GameDVR_Enabled 0 1),(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' AppCaptureEnabled 0 1))
+fTw $s11 'Disable Game DVR / background capture' 'Turns off Game DVR background recording ("Record what happened") and app capture, for this user and by machine policy (AllowGameDVR = 0), so a Windows or Xbox app update cannot switch it back on.' Safe 'WinUtil, Win11Debloat, Sophia' Any 'gaming' @((fReg 'HKCU:\System\GameConfigStore' GameDVR_Enabled 0 1),(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' AppCaptureEnabled 0 1),(fReg "$POL\GameDVR" AllowGameDVR 0 $null))
 fTw $s11 'Disable mouse acceleration' 'Turns off "Enhance pointer precision", so the cursor moves the same distance for the same hand movement, no matter how fast you move the mouse.' Safe 'WinUtil, Sophia' Any 'gaming' @((fReg 'HKCU:\Control Panel\Mouse' MouseSpeed '0' '1' String),(fReg 'HKCU:\Control Panel\Mouse' MouseThreshold1 '0' '6' String),(fReg 'HKCU:\Control Panel\Mouse' MouseThreshold2 '0' '10' String))
 fTw $s4 'Disable Fast Startup' 'Makes "Shut down" a real shutdown. With Fast Startup on, Windows hibernates the kernel and drivers instead, so they are never fully reset.' Safe 'WinUtil, Sophia' Any 'gaming' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power' HiberbootEnabled 0 1)
 fTw $s4 'Disable SysMain (Superfetch)' 'Disables SysMain (Superfetch), which learns which apps you use and preloads them into free RAM.' Advanced 'WinUtil, W10Debloater, W4RH4WK' Any '' @(fSvc SysMain Automatic)
@@ -100,7 +127,7 @@ fTw $s2 'Remove Teams (personal) & Cortana' 'Uninstalls the built-in Teams packa
 fTw $s2 'Remove optional extras' 'Uninstalls OneNote (Store version), Sticky Notes, Maps, Alarms & Clock, Voice Recorder, Camera, Calculator and Power Automate. Pick items individually.' Moderate 'Windows10Debloater' Any '' @('Microsoft.Office.OneNote','Microsoft.MicrosoftStickyNotes','Microsoft.WindowsMaps','Microsoft.WindowsAlarms','Microsoft.WindowsSoundRecorder','Microsoft.WindowsCamera','Microsoft.WindowsCalculator','Microsoft.PowerAutomateDesktop'|ForEach-Object{fApp $_}) 'Keep any you actually use (Camera, Calculator and Sticky Notes are the common ones; pick items individually).'
 fTw $s8 'Remove more promo games & stubs' 'Uninstalls older promo games and app stubs (King games, FarmVille, Asphalt, March of Empires, Royal Revolt, Duolingo, Netflix, Pandora, Twitter, Flipboard, Shazam, iHeartRadio, PicsArt).' Safe 'Windows10Debloater' Any 'safe' @('*king.com*','*FarmVille*','*Asphalt*','*MarchofEmpires*','*RoyalRevolt*','*Duolingo*','*Netflix*','*Pandora*','*Twitter*','*Flipboard*','*Shazam*','*iHeartRadio*','*PicsArt*'|ForEach-Object{fApp $_})
 fTw $s9 'Remove legacy Microsoft apps' 'Uninstalls Skype, Groove Music / Media Player, Movies & TV, People, Messaging, Sway, OneConnect and Reading List. Pick items individually.' Safe 'Windows10Debloater' Any 'safe' @('Microsoft.SkypeApp','Microsoft.ZuneMusic','Microsoft.ZuneVideo','Microsoft.People','Microsoft.Messaging','Microsoft.Office.Sway','Microsoft.OneConnect','Microsoft.WindowsReadingList'|ForEach-Object{fApp $_})
-fTw $s9 'Uninstall OneDrive' 'Runs the official OneDrive uninstaller (system or per-user install). Your cloud files are not deleted.' Advanced 'winscript' Any '' @(fCmd '$p=@(@("$env:SystemRoot\SysWOW64\OneDriveSetup.exe","$env:SystemRoot\System32\OneDriveSetup.exe")+@(Get-ChildItem "$UserLocal\Microsoft\OneDrive\*\OneDriveSetup.exe","${env:ProgramFiles}\Microsoft OneDrive\*\OneDriveSetup.exe" -ErrorAction SilentlyContinue|ForEach-Object FullName)|Where-Object{Test-Path -LiteralPath $_})|Select-Object -First 1;if(-not $p){throw ''OneDriveSetup.exe was not found - OneDrive is probably already uninstalled''};Stop-Process -Name OneDrive -Force -ErrorAction SilentlyContinue;Start-Process $p ''/uninstall'' -Wait') 'Back up your OneDrive folders first. Skip if you use OneDrive sync.'
+fTw $s9 'Uninstall OneDrive' 'Runs the official OneDrive uninstaller for the signed-in user (system or per-user install) and removes the OneDrive setup entry that new accounts would get. Optional: block OneDrive by policy so it cannot run or come back with an update. Your cloud files are not deleted.' Advanced 'winscript' Any '' @((fCmd 'Uninstall-OneDrive' $null $null 'Uninstall the OneDrive app'),(fReg "$POL\OneDrive" DisableFileSyncNGSC 1 $null)) 'Back up your OneDrive folders first. Skip if you use OneDrive sync. The policy switch can be undone; the uninstall cannot (reinstall from microsoft.com/onedrive).'
 fTw $s10 'Left-align taskbar' 'Moves the Start button and taskbar icons to the left edge, like Windows 10.' Safe 'Win11Debloat, Windows-Maintenance-Tool' 11 '' @(fReg $ADV TaskbarAl 0 1)
 fTw $s10 'Hide Task View button' 'Removes the Task View (virtual desktops) button from the taskbar. Win+Tab still opens it.' Safe 'Win11Debloat, Windows-Maintenance-Tool' Any '' @(fReg $ADV ShowTaskViewButton 0 1)
 fTw $s10 'Hide Chat button' 'Removes the Teams "Chat" button from the Windows 11 taskbar. Only builds 21H2/22H2 have it; on 23H2 and newer the button no longer exists, so this changes nothing there.' Safe 'Win11Debloat, Windows-Maintenance-Tool' 11 'safe' @(fReg $ADV TaskbarMn 0 1)
@@ -114,22 +141,28 @@ fTw $s5 'Hide recent & frequent items in Explorer' 'Explorer Home / Quick Access
 fTw $s4 'Disable Storage Sense auto cleanup' 'Turns off Storage Sense, so Windows never deletes temp files or Recycle Bin items on its own.' Safe 'Win11Debloat, winscript' Any '' @(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy' '01' 0 1)
 fTw $s4 'Disable transparency effects' 'Turns off the blur and see-through effect on the taskbar, Start, Action Center and window backgrounds.' Safe 'Win11Debloat' Any '' @(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' EnableTransparency 0 1)
 fTw $s4 'Disable hibernation' 'Runs powercfg /hibernate off: deletes hiberfil.sys and turns off Hibernate and Fast Startup. Undo turns them back on.' Moderate 'Windows-Maintenance-Tool' Any '' @(fCmd 'powercfg /hibernate off' 'powercfg /hibernate on' "(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' -Name HibernateEnabled -ErrorAction SilentlyContinue).HibernateEnabled -eq 0") 'Fine on desktops; keep it on laptops.'
-fTw $s4 'Ultimate Performance power plan' 'Creates Windows hidden Ultimate Performance plan once, using a fixed ID so repeated Apply never piles up copies, and makes it active. CPU cores stay at high clocks and power saving is minimised. Undo switches back to Balanced and deletes the plan.' Moderate 'winscript, Windows-Maintenance-Tool' Any 'gaming' @(fCmd '$g=''ec2056a3-39a8-4408-993a-3b596535ebe1'';if(-not((powercfg /list) -match $g)){$null=powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 $g;if($LASTEXITCODE){throw ''Windows refused to create the Ultimate Performance plan (some laptops hide it)''}};powercfg /setactive $g' '$g=''ec2056a3-39a8-4408-993a-3b596535ebe1'';powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e;if((powercfg /list) -match $g){$null=powercfg /delete $g};$global:LASTEXITCODE=0' '[bool]((powercfg /getactivescheme) -match ''ec2056a3-39a8-4408-993a-3b596535ebe1'')') 'Desktops only; avoid on battery.'
+fTw $s4 'Ultimate Performance power plan' 'Creates Windows hidden Ultimate Performance plan once, using a fixed ID so repeated Apply never piles up copies, and makes it active. CPU cores stay at high clocks and power saving is minimised. Undo switches back to the plan that was active before (Balanced if unknown) and deletes the plan.' Moderate 'winscript, Windows-Maintenance-Tool' Any 'gaming' @(fCmd 'Enable-UltimatePlan' 'Disable-UltimatePlan' '[bool]((powercfg /getactivescheme) -match ''ec2056a3-39a8-4408-993a-3b596535ebe1'')' $null @('Cmd_26F50AB0DD212109')) 'Desktops only; avoid on battery.'
 fTw $s11 'Disable Game Bar' 'Stops the Xbox button on a controller opening Game Bar and hides the Game Bar tips panel when a game starts.' Safe 'Win11Debloat' Any 'gaming' @((fReg 'HKCU:\Software\Microsoft\GameBar' UseNexusForGameBarEnabled 0 1),(fReg 'HKCU:\Software\Microsoft\GameBar' ShowStartupPanel 0 1))
 fTw $s12 'No auto-restart while signed in' 'Group Policy that tells Windows Update not to restart the PC automatically while someone is signed in.' Safe 'Win11Debloat' Any 'safe' @(fReg "$POL\WindowsUpdate\AU" NoAutoRebootWithLoggedOnUsers 1 $null)
 fTw $s12 'Disable device metadata downloads' 'Stops Windows downloading manufacturer names, photos and icons for connected devices from the internet.' Safe 'Windows-Maintenance-Tool' Any 'privacy' @(fReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Device Metadata' PreventDeviceMetadataFromNetwork 1 $null)
 fTw $s12 'Disable BitLocker auto device encryption' 'Prevents Windows from turning on Device Encryption (BitLocker) automatically. It does not decrypt a drive that is already encrypted; check Settings > Privacy & security > Device encryption for that.' Advanced 'Win11Debloat' Any '' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control\BitLocker' PreventDeviceEncryption 1 $null) 'Leave this OFF on laptops: encryption protects your data if the device is lost.'
-fTw $s13 'Use Cloudflare DNS (1.1.1.1)' 'Sets the DNS servers of every active network adapter to Cloudflare (1.1.1.1 / 1.0.0.1, plus IPv6 where enabled). Undo returns all adapters to automatic DNS from your router (DHCP).' Advanced 'Windows-Maintenance-Tool' Any '' @(fCmd 'Get-NetAdapter|Where-Object Status -eq Up|ForEach-Object{Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses ''1.1.1.1'',''1.0.0.1'';try{Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses ''1.1.1.1'',''1.0.0.1'',''2606:4700:4700::1111'',''2606:4700:4700::1001'' -ErrorAction Stop}catch{}}' 'Get-NetAdapter|ForEach-Object{Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses}' '$ad=@(Get-NetAdapter|Where-Object Status -eq Up);[bool]($ad.Count -and -not @($ad|Where-Object{(@((Get-DnsClientServerAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4).ServerAddresses) -join '','') -ne ''1.1.1.1,1.0.0.1''}).Count)') 'Experts only: skip it if you use a NAS or local network shares, connect to hotel or airport Wi-Fi, or your router, VPN or workplace controls DNS.'
+fTw $s13 'Use Cloudflare DNS (1.1.1.1)' 'Sets the DNS servers of every connected physical network adapter (Ethernet, Wi-Fi) to Cloudflare (1.1.1.1 / 1.0.0.1, plus IPv6 where enabled). VPN, Hyper-V, WSL and other virtual adapters are left alone. Undo puts back the DNS servers each adapter had before (automatic or the ones you typed in).' Advanced 'Windows-Maintenance-Tool' Any '' @(fCmd 'Set-CloudflareDns' 'Undo-CloudflareDns' 'Test-CloudflareDns' $null @('Cmd_3F2AA810B18B901E')) 'Experts only: skip it if you use a NAS or local network shares, connect to hotel or airport Wi-Fi, or your router, VPN or workplace controls DNS.'
 fTw $s14 'Flush DNS cache' 'Runs ipconfig /flushdns to clear the list of recently looked-up website addresses.' Safe 'Windows-Maintenance-Tool' Any '' @(fCmd 'ipconfig /flushdns')
-fTw $s14 'Clean temp files & empty Recycle Bin' 'Deletes everything in your Temp folder and the Windows Temp folder (files in use are skipped) and empties the Recycle Bin.' Safe 'Windows-Maintenance-Tool' Any '' @(fCmd 'Remove-Item "$UserLocal\Temp\*","$env:SystemRoot\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue;Clear-RecycleBin -Force -ErrorAction SilentlyContinue') 'Close other apps first.'
+fTw $s14 'Clean temp files & empty Recycle Bin' 'Deletes everything in your Temp folder and the Windows Temp folder (files in use are skipped) and empties the Recycle Bin.' Safe 'Windows-Maintenance-Tool' Any '' @(fCmd 'Clear-TempAndBin') 'Close other apps first.'
 fTw $s14 'Repair system files (SFC)' 'Runs sfc /scannow, which checks every protected Windows file and replaces damaged ones from the component store. Takes 10+ minutes.' Safe 'Windows-Maintenance-Tool' Any '' @(fCmd 'sfc /scannow') 'Run this on its own, not together with other tweaks.'
 fTw $s14 'Repair Windows image (DISM RestoreHealth)' 'Runs DISM /RestoreHealth, which repairs the component store (the source SFC copies from) by downloading good files from Windows Update.' Safe 'Windows-Maintenance-Tool' Any '' @(fCmd 'DISM /Online /Cleanup-Image /RestoreHealth') 'Run before SFC if SFC reports errors it cannot fix.'
 # WARNING: deleting superseded driver packages makes the "Roll Back Driver" button in Device Manager inactive for every device whose driver was updated
 # (the previous version no longer exists) and the deleted packages cannot be restored. Drivers a connected device uses, boot-critical drivers and printer drivers are never deleted.
 fTw $s14 'Clean up old driver versions (Driver Store)' 'Deletes superseded third-party driver packages from the Windows Driver Store (FileRepository) and keeps the newest version of every driver. Skips drivers that connected devices use, boot-critical drivers and printer drivers. WARNING: afterwards the "Roll Back Driver" button in Device Manager is inactive for devices whose driver was updated, and the deleted packages cannot be restored. A reboot may be needed.' Advanced 'DebloatHub' Any '' @(fCmd 'Clean-DriverStore') 'Only if you need the disk space and are sure you will not need to roll back any driver. DebloatHub cannot bring deleted driver packages back.'
-fTw $s14 'Reset Windows Update components' 'Stops Windows Update and BITS, deletes the downloaded-update cache (SoftwareDistribution\Download) and starts the services again.' Moderate 'Windows-Maintenance-Tool' Any '' @(fCmd 'Stop-Service wuauserv,bits -Force;Remove-Item "$env:SystemRoot\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue;Start-Service wuauserv,bits') 'Use when Windows Update is stuck or failing.'
+fTw $s14 'Reset Windows Update components' 'Stops Windows Update and BITS, deletes the downloaded-update cache (SoftwareDistribution\Download) and starts the services again.' Moderate 'Windows-Maintenance-Tool' Any '' @(fCmd 'Reset-WUCache') 'Use when Windows Update is stuck or failing.'
 fTw $s14 'Reset network stack' 'Runs netsh winsock reset and netsh int ip reset, which rebuild the network catalog and TCP/IP settings to defaults. Reboot required.' Moderate 'Windows-Maintenance-Tool' Any '' @(fCmd 'netsh winsock reset;netsh int ip reset') 'Only when you have connection problems.'
 fTw $s14 'SSD TRIM (system drive)' 'Sends TRIM for the Windows drive right now (Optimize-Volume -ReTrim), telling the SSD which blocks are free.' Safe 'Windows-Maintenance-Tool' Any '' @(fCmd 'Optimize-Volume -DriveLetter $env:SystemDrive[0] -ReTrim')
+fTw $s3 'Start menu: no recommendations or account notifications (Windows 11)' 'Hides the tips, app promotions and "recommended" suggestions in the Windows 11 Start menu and the Microsoft account reminders ("back up your PC", "finish signing in") on the Start menu profile button.' Safe 'WinUtil, Win11Debloat' 11 'safe,privacy' @((fReg $ADV Start_IrisRecommendations 0 1),(fReg $ADV Start_AccountNotifications 0 1))
+fTw $s5 'Disable OneDrive and sync-provider ads in Explorer' 'Stops File Explorer showing banners that advertise OneDrive and Microsoft 365 storage (sync provider notifications).' Safe 'WinUtil, Win11Debloat, Sophia' Any 'safe' @(fReg $ADV ShowSyncProviderNotifications 0 1)
+fTw $s5 'Classic right-click menu (Windows 11)' 'Right-click in Explorer opens the full classic menu straight away, instead of the short Windows 11 menu with "Show more options". Takes effect after Explorer restarts (sign out, or restart Explorer in Task Manager).' Safe 'WinUtil, Win11Debloat, Sophia' 11 '' @(fCmd ("`$k='"+(Map-Hive 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}')+"\InprocServer32';New-Item -Path `$k -Force|Out-Null;Set-ItemProperty -LiteralPath `$k -Name '(default)' -Value ''") ("Remove-Item -LiteralPath '"+(Map-Hive 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}')+"' -Recurse -Force -ErrorAction SilentlyContinue") ("Test-Path -LiteralPath '"+(Map-Hive 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}')+"\InprocServer32'") 'Classic context menu')
+fTw $s6 'Hide Copilot button on the taskbar (Windows 11)' 'Removes the Copilot button that Windows 11 23H2 added next to the clock. On newer builds the button may not exist; the Copilot app and key are not affected.' Safe 'WinUtil, Win11Debloat' 11 'privacy' @(fReg $ADV ShowCopilotButton 0 1)
+fTw $s12 'Do not install drivers through Windows Update' 'Group Policy that stops Windows Update from installing driver updates with quality updates (ExcludeWUDriversInQualityUpdate). You install drivers yourself from the GPU, chipset or laptop maker.' Moderate 'WinUtil, Sophia' Any '' @(fReg "$POL\WindowsUpdate" ExcludeWUDriversInQualityUpdate 1 $null) 'Useful if Windows Update keeps replacing your GPU driver with an older one. Remember to update drivers yourself.'
+fTw $s2 'Stop Windows reinstalling Teams (Chat auto-install)' 'Tells Windows 11 not to install the Teams personal (Chat) app again, for example after a feature update or for new accounts (ConfigureChatAutoInstall = 0).' Safe 'WinUtil, Win11Debloat' 11 '' @(fReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Communications' ConfigureChatAutoInstall 0 $null) 'Use it together with "Remove Teams (personal) & Cortana".'
 )
 
 # ---------- Extra guidance shown in the hover card: @(need it?, pros, cons) ----------
@@ -182,7 +215,7 @@ $more=@{
 'Disable Sticky Keys prompt'=@('Use it unless you use Sticky Keys or need the shortcut for accessibility.','No game interruptions when you tap Shift repeatedly.','The Shift x5 accessibility shortcut no longer works; turn Sticky Keys on in Settings > Accessibility instead.')
 'Show full path in title bar'=@('Personal preference; handy if many folders have the same name.','You always know exactly which folder is open, even from the taskbar preview.','Long paths get cut off in the title.')
 'Hide recent & frequent items in Explorer'=@('Use it if others see your screen or you share the PC.','Your recent documents are not on display every time you open Explorer.','No quick list of recent files in Explorer; use the app''s own recent list instead.')
-'Disable SysMain (Superfetch)'=@('Mostly not worth it. Consider it only on an SSD PC where SysMain is clearly causing disk or CPU spikes. Keep it on hard drives and on PCs with 8 GB RAM or less.','No background preloading; less disk activity right after boot on some systems.','Apps start slower, a lot slower on hard drives. Unused RAM is not "freed" in any useful way: preloaded data is dropped instantly when needed.')
+'Disable SysMain (Superfetch)'=@('Mostly not worth it. Consider it only on an SSD PC where SysMain is clearly causing disk or CPU spikes. Keep it on hard drives and on PCs with 8 GB RAM or less.','No background preloading; less disk activity right after boot on some systems.','Apps start slower, a lot slower on hard drives. Unused RAM is not "freed" in any useful way: preloaded data is dropped instantly when needed. The memory compression switch (Memory section) needs SysMain; DebloatHub tells you if the two conflict.')
 'Disable Windows Search indexing'=@('Skip it if you search files in Explorer or Start, or use desktop Outlook. Consider it only if you never search and the indexer keeps the disk busy.','No background indexing of new files; less disk and CPU use on weak PCs.','Outlook (desktop) search breaks; Explorer and Start file search become slow and incomplete. App and Settings search in Start still work.')
 'Disable Fast Startup'=@('Use it if you dual-boot, have driver or Wi-Fi glitches after power-on, or want updates and BIOS changes to apply cleanly on shutdown.','Every power-on starts fresh, which fixes many stuck-device and dual-boot problems; uptime in Task Manager becomes accurate.','Cold boots take a few seconds longer (very little on SSDs).')
 'Disable Storage Sense auto cleanup'=@('Use it if you want full control over what gets deleted. It is the opposite of "Enable Storage Sense"; switching one on switches the other off.','Nothing is deleted behind your back (e.g. old Recycle Bin items you might still want).','Temp files and the Recycle Bin grow until you clean them yourself.')
@@ -196,7 +229,7 @@ $more=@{
 'No auto-restart while signed in'=@('Use it if you leave work, downloads or renders running overnight. Also set "Active hours" in Windows Update for extra safety.','Fewer surprise reboots that close your open apps and unsaved work.','Updates wait until you restart yourself, so security fixes can be delayed. Microsoft documents this policy for scheduled-install setups; on some Home PCs a restart outside active hours can still happen.')
 'Disable device metadata downloads'=@('Use it; it only affects how devices look in Settings and Devices and Printers.','Fewer background web requests when you connect new devices.','Some devices show generic icons and names instead of the manufacturer picture.')
 'Disable BitLocker auto device encryption'=@('Use it before or right after a fresh install if you do not want encryption, e.g. to avoid lock-outs. Leave it off on laptops that leave the house.','No surprise BitLocker recovery screen after a BIOS update or hardware change when you never saved the recovery key; slightly faster disk access on some older SSDs.','If the laptop is lost or stolen, anyone can read your drive by putting it in another PC.')
-'Use Cloudflare DNS (1.1.1.1)'=@('Use it if your provider''s DNS is slow, unreliable or blocks sites. Skip it if you use a NAS or printers by name, a VPN or work network, router-level ad-blocking (Pi-hole) or parental controls.','Often faster and more reliable name lookups; your ISP no longer sees your DNS queries through its own resolver.','Local names from your router (NAS, printers) can stop resolving; hotel/airport Wi-Fi login pages may not open; router and VPN DNS filtering is bypassed. Undo resets to automatic, not to a DNS you had set manually.')
+'Use Cloudflare DNS (1.1.1.1)'=@('Use it if your provider''s DNS is slow, unreliable or blocks sites. Skip it if you use a NAS or printers by name, a VPN or work network, router-level ad-blocking (Pi-hole) or parental controls.','Often faster and more reliable name lookups; your ISP no longer sees your DNS queries through its own resolver.','Local names from your router (NAS, printers) can stop resolving; hotel/airport Wi-Fi login pages may not open; router and VPN DNS filtering is bypassed. VPN and virtual adapters are not changed. Undo restores each adapter''s previous DNS.')
 'Flush DNS cache'=@('Use it when a site moved, a hosts-file or DNS change does not take effect, or pages fail to load while others work.','Forces fresh lookups; fixes stale or broken DNS entries instantly.','None; the first visit to each site takes a few milliseconds longer.')
 'Clean temp files & empty Recycle Bin'=@('Use it when the drive is getting full. Check the Recycle Bin first.','Often frees hundreds of MB to several GB.','Recycle Bin contents are gone for good; an installer running at the same time may fail, so close other apps first.')
 'Repair system files (SFC)'=@('Use it when Windows crashes, apps or Settings fail to open, or after malware cleanup. Run DISM RestoreHealth first if SFC says it could not fix everything.','Repairs corrupted system files without reinstalling Windows.','Slow, and the progress bar looks frozen. Run it on its own.')
@@ -207,12 +240,19 @@ $more=@{
 'SSD TRIM (system drive)'=@('Rarely needed: Windows already does this weekly in "Optimize Drives". Use it after deleting a lot of data or if the weekly task is turned off.','Keeps SSD write speed consistent after large deletions.','None on SSDs; on hard drives Windows refuses and the action reports an error.')
 }
 
+$more['Start menu: no recommendations or account notifications (Windows 11)']=@('Use it unless you like Start suggesting apps and Microsoft account features.','A calmer Start menu without promotions or "finish setting up" nags.','You no longer see tips about new Windows features in Start.')
+$more['Disable OneDrive and sync-provider ads in Explorer']=@('Use it unless you want Explorer to suggest OneDrive or Microsoft 365 storage.','No storage-upsell banners at the top of Explorer windows.','None; real OneDrive sync status icons are not affected.')
+$more['Classic right-click menu (Windows 11)']=@('Use it if you keep clicking "Show more options" to reach 7-Zip, Git, or other app entries.','Every right-click entry is one click away again, like Windows 10.','The compact Windows 11 menu and its icon row (cut, copy, rename) are gone until you switch this off. Needs an Explorer restart or sign-out.')
+$more['Hide Copilot button on the taskbar (Windows 11)']=@('Use it if you do not use Copilot from the taskbar.','More room on the taskbar.','No one-click Copilot button; open Copilot from Start or the Copilot key instead.')
+$more['Do not install drivers through Windows Update']=@('Use it if Windows Update overwrote a GPU or audio driver you installed yourself, or you always install drivers from the maker.','Your chosen driver versions stay in place.','New devices may not get a driver automatically, and you miss driver fixes that only ship through Windows Update. Update drivers yourself.')
+$more['Stop Windows reinstalling Teams (Chat auto-install)']=@('Use it after removing Teams (personal) so it stays gone.','Teams personal does not come back with feature updates or for new accounts.','None for most people. On a few builds Windows protects this key; DebloatHub then reports the switch as failed and nothing else changes.')
+
 # ---------- Round 2: startup, services, features, Edge/background, OEM (written from my own knowledge, NOT from the 7 repos - verify) ----------
 $s15='Startup Programs';$s16='Services (start on demand)';$s17='Optional Windows Features';$s18='Edge & Background Apps';$s19='OEM Utilities'
 $secs=@($secs|Where-Object{$_ -ne $s14})+@($s18,$s15,$s16,$s17,$s19,$s14)
 $LBL=@{'Microsoft.549981C3F5F10'='Cortana';'Microsoft.GamingApp'='Xbox app';'Microsoft.XboxApp'='Xbox Console Companion (old)';'Microsoft.OutlookForWindows'='Outlook (new)';'microsoft.windowscommunicationsapps'='Mail and Calendar (old)';'Microsoft.Windows.DevHome'='Dev Home';'Microsoft.Todos'='Microsoft To Do';'MicrosoftCorporationII.MicrosoftFamily'='Microsoft Family';'MicrosoftCorporationII.QuickAssist'='Quick Assist';'Microsoft.BingSearch'='Bing Search';'Microsoft.MicrosoftJournal'='Journal';'Microsoft.YourPhone'='Phone Link';'MicrosoftWindows.CrossDevice'='Phone Link helper (Cross Device)';'*DellInc*'='Dell apps';'*AD2F1837*'='HP apps (Support Assistant, Smart...)';'*Lenovo*'='Lenovo apps (Vantage...)';'*AcerIncorporated*'='Acer apps';'*ASUS*'='ASUS apps (Armoury Crate...)';'*McAfee*'='McAfee trial';'*Norton*'='Norton trial'
  MapsBroker='Downloaded Maps Manager';TrkWks='Distributed Link Tracking';PcaSvc='Program Compatibility Assistant';edgeupdate='Edge Update'
- MicrosoftWindowsPowerShellV2Root='PowerShell 2.0';SMB1Protocol='SMB 1.0 file sharing';'Printing-XPSServices-Features'='XPS Services';'Internet-Explorer-Optional-amd64'='Internet Explorer mode';'WorkFolders-Client'='Work Folders';FaxServicesClientPackage='Windows Fax and Scan';TelnetClient='Telnet client';'01'='Storage Sense on';'04'='Delete temporary files';'08'='Clean up Recycle Bin';'256'='Recycle Bin: delete after 30 days';'2048'='Run every week'}
+ MicrosoftWindowsPowerShellV2Root='PowerShell 2.0';SMB1Protocol='SMB 1.0 file sharing';'Printing-XPSServices-Features'='XPS Services';'Internet-Explorer-Optional-amd64'='Internet Explorer mode';'WorkFolders-Client'='Work Folders';FaxServicesClientPackage='Windows Fax and Scan';TelnetClient='Telnet client';DisableFileSyncNGSC='Block OneDrive by policy (cannot run or come back)';'MicrosoftWindows.Client.WebExperience'='Widgets (Windows Web Experience Pack)';Start_IrisRecommendations='No tips and app recommendations in Start';Start_AccountNotifications='No Microsoft account notifications in Start';'01'='Storage Sense on';'04'='Delete temporary files';'08'='Clean up Recycle Bin';'256'='Recycle Bin: delete after 30 days';'2048'='Run every week'}
 $sd='DebloatHub'
 $EP='HKLM:\SOFTWARE\Policies\Microsoft\Edge'
 # ---------- Installed apps: browser and IDE tweaks are offered only when that program is installed ----------
@@ -226,6 +266,13 @@ $haveEdge   =(Find-App 'msedge.exe'  @("$pf86\Microsoft\Edge\Application\msedge.
 $haveChrome =(Find-App 'chrome.exe'  @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe","$pf86\Google\Chrome\Application\chrome.exe","$UserLocal\Google\Chrome\Application\chrome.exe")) -or (Test-Path 'HKLM:\SOFTWARE\Policies\Google\Chrome')
 $haveFirefox=(Find-App 'firefox.exe' @("$env:ProgramFiles\Mozilla Firefox\firefox.exe","$pf86\Mozilla Firefox\firefox.exe","$UserLocal\Mozilla Firefox\firefox.exe")) -or (Test-Path 'HKLM:\SOFTWARE\Policies\Mozilla\Firefox')
 $haveVS     =(Test-Path "$pf86\Microsoft Visual Studio\Installer\vswhere.exe") -or (Test-Path 'HKLM:\SOFTWARE\Policies\Microsoft\VisualStudio\SQM')
+# Developer CLIs: offered only when a developer tool is on the PATH (machine or the signed-in user's), or when one of the variables is already set (so it can be reverted)
+$haveDev=$false;$envK=Map-Hive 'HKCU:\Environment'
+try{$pp=@([Environment]::GetEnvironmentVariable('Path','Machine'),[string](Get-ItemProperty -LiteralPath $envK -Name Path -ErrorAction SilentlyContinue).Path) -join ';'
+ foreach($d in @($pp -split ';'|Where-Object{$_.Trim()})){$d=[Environment]::ExpandEnvironmentVariables($d.Trim().Trim('"'))
+  foreach($x in 'node.exe','dotnet.exe','pwsh.exe','az.cmd','terraform.exe','vcpkg.exe','sam.cmd','sam.exe','npm.cmd','ng.cmd','turbo.cmd','prisma.cmd'){try{if([IO.File]::Exists([IO.Path]::Combine($d,$x))){$haveDev=$true;break}}catch{}}
+  if($haveDev){break}}}catch{}
+if(-not $haveDev){$ek=Get-Item -LiteralPath $envK -ErrorAction SilentlyContinue;if($ek -and @($ek.GetValueNames()|Where-Object{$_ -in 'DOTNET_CLI_TELEMETRY_OPTOUT','DO_NOT_TRACK','NEXT_TELEMETRY_DISABLED','POWERSHELL_TELEMETRY_OPTOUT'}).Count){$haveDev=$true}}
 if($haveEdge){$db+=fTw $s18 'Disable Edge startup boost & background mode' 'Edge stops pre-loading itself when you sign in (Startup boost) and stops running in the background after you close the last window.' Safe $sd Any 'safe' @((fReg $EP StartupBoostEnabled 0 $null),(fReg $EP BackgroundModeEnabled 0 $null)) 'Good RAM saver if you use Edge or have it installed. Edge will say it is managed by your organization; that is just the policy.'}
 if($haveEdge){$db+=fTw $s18 'Quiet Edge: no sidebar, shopping assistant or first-run' 'Edge policies that hide the sidebar (Copilot/apps pane), turn off the shopping assistant (coupons, price comparison) and skip the welcome/first-run pages.' Safe $sd Any 'safe' @((fReg $EP HubsSidebarEnabled 0 $null),(fReg $EP EdgeShoppingAssistantEnabled 0 $null),(fReg $EP HideFirstRunExperience 1 $null))}
 $db+=fTw $s18 'Block apps from running in the background' 'Forces all Microsoft Store apps to stay closed when not open (policy plus the per-user setting). Normal desktop programs are not affected.' Moderate $sd Any 'gaming' @((fReg "$POL\AppPrivacy" LetAppsRunInBackground 2 $null),(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications' GlobalUserDisabled 1 0)) 'Skip if you depend on Mail, Calendar or Alarms notifying you while closed.'
@@ -251,6 +298,17 @@ foreach($e in $su){$nm="Disable at startup: $($e.N)";if($seenN.ContainsKey($nm))
  $rk2=if($e.N -match 'Security|Defender|Antivirus|Norton|McAfee|Kaspersky|Bitdefender|Avast|ESET'){'Advanced'}elseif($e.N -match 'Realtek|Audio|NVIDIA|Intel|AMD|Synaptics|Touchpad|Bluetooth'){'Moderate'}else{'Safe'}
  $db+=fTw $s15 $nm "Launches at sign-in: $($e.C)" $rk2 $sd Any '' @(@{K='Startup';A=(Map-Hive $e.A);N=$e.N}) 'Disabling only stops it launching at sign-in; the app still works when you open it. The same list is in Task Manager > Startup apps.'
  $more[$nm]=@('Only if you need this app running right after sign-in (chat, sync, tray tools, hardware utilities).','Faster sign-in and less RAM used in the background.','The app will not start by itself: no tray icon, notifications or sync until you open it.')}
+# Microsoft Store apps (new Teams, Spotify, WhatsApp, Phone Link...) register their own startup tasks; Task Manager > Startup apps lists them too.
+# Their switch is the State value: 2 = enabled, 1 = turned off by the user (0 = never enabled, 3/4 = set by policy: not offered).
+$sat=Map-Hive 'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData'
+if(Test-Path -LiteralPath $sat){foreach($pk in @(Get-ChildItem -LiteralPath $sat -ErrorAction SilentlyContinue)){foreach($tk in @(Get-ChildItem -LiteralPath $pk.PSPath -ErrorAction SilentlyContinue)){
+ $stv=(Get-ItemProperty -LiteralPath $tk.PSPath -Name State -ErrorAction SilentlyContinue).State
+ if($null -eq $stv -or [int]$stv -notin 1,2){continue}
+ $app=$pk.PSChildName -replace '_[a-z0-9]{13}$','';$nm="Disable at startup: $app - $($tk.PSChildName) (Store app)"
+ if($seenN.ContainsKey($nm)){continue};$seenN[$nm]=1
+ $rk2=if($app -match 'Security|Defender|Antivirus'){'Advanced'}elseif($app -match 'Realtek|Audio|NVIDIA|Intel|AMD|Synaptics|Dolby'){'Moderate'}else{'Safe'}
+ $db+=fTw $s15 $nm "Store app startup task: $($pk.PSChildName)\$($tk.PSChildName)" $rk2 $sd Any '' @(fReg ("$sat\$($pk.PSChildName)\$($tk.PSChildName)") State 1 2) 'Disabling only stops it launching at sign-in; the app still works when you open it. The same list is in Task Manager > Startup apps.'
+ $more[$nm]=@('Only if you need this app running right after sign-in (chat, sync, tray tools, hardware utilities).','Faster sign-in and less RAM used in the background.','The app will not start by itself: no tray icon, notifications or sync until you open it.')}}}
 $secs=@($secs|ForEach-Object{$sx=$_;if(@($db|Where-Object{$_.Sec -eq $sx}).Count){$sx}})
 
 # ---------- Round 3: Visual Effects (presets move switches; every effect is also its own switch) ----------
@@ -465,7 +523,7 @@ function AddT($sec,$name,$desc,$risk,$prof,$acts,$rec,$m,[switch]$split,$when=$t
 AddT $s21 'VS Code: turn off telemetry, feedback prompts & experiments' 'Sets three documented settings in your VS Code user settings.json in place (comments and formatting are kept; a .debloathub.bak copy is made the first time): telemetry.telemetryLevel = off, telemetry.feedback.enabled = false, workbench.enableExperiments = false.' Safe 'safe,privacy,telemetry' @((fJson $VSC 'telemetry.telemetryLevel' 'off' $null),(fJson $VSC 'telemetry.feedback.enabled' $false $null),(fJson $VSC 'workbench.enableExperiments' $false $null)) 'Your settings.json is edited in place: comments, trailing commas and layout stay. Extensions may still send their own telemetry. Does nothing if VS Code has never been started on this account.' @('Needed only if you want to help Microsoft improve VS Code or get early features.','No usage data, error or crash reports to Microsoft; no survey or issue-reporter prompts.','New features may reach you later because VS Code rolls them out through experiments.') -split -when (Test-Path -LiteralPath (Split-Path $VSC))
 AddT $s21 'VS Code: stop background lookups (npm, JSON schemas, type downloads)' 'Stops VS Code fetching package info, JSON schemas and TypeScript types from the internet automatically.' Moderate '' @((fJson $VSC 'npm.fetchOnlinePackageInfo' $false $null),(fJson $VSC 'json.schemaDownload.enable' $false $null),(fJson $VSC 'typescript.disableAutomaticTypeAcquisition' $true $null)) 'Pick only what you can live without: JSON validation for package.json and similar may lose autocomplete, and JS projects get fewer automatic type hints.' @('Skip if you rely on hover info for npm packages or schema-based JSON validation.','Fewer outgoing requests while you edit; works better offline.','Less autocomplete and validation help in JSON and JavaScript files.') -split -when (Test-Path -LiteralPath (Split-Path $VSC))
 AddT $s21 'Visual Studio: turn off telemetry (Customer Experience Improvement Program)' 'Applies the Microsoft-documented Group Policy value HKLM\SOFTWARE\Policies\Microsoft\VisualStudio\SQM\OptIn = 0, which overrides the per-version setting in every installed Visual Studio.' Safe 'safe,privacy,telemetry' @(fReg 'HKLM:\SOFTWARE\Policies\Microsoft\VisualStudio\SQM' OptIn 0 $null) '' @('Needed only if you want to help improve Visual Studio.','No usage telemetry from Visual Studio.','Visual Studio shows its privacy setting as managed by policy.') -when $haveVS
-AddT $s21 'Developer CLIs: turn off telemetry (.NET, PowerShell 7, Next.js, Nuxt, Astro, Gatsby, Angular, Storybook, Turborepo, vcpkg, Terraform/Prisma, AWS SAM, Azure CLI, DO_NOT_TRACK)' 'Sets per-user environment variables that tell common developer tools not to send usage data. POWERSHELL_TELEMETRY_OPTOUT only affects PowerShell 7+, not Windows PowerShell 5.1. Angular only collects usage data if you opted in; NG_CLI_ANALYTICS=false makes sure of it. For Storybook the environment variable is the only switch that also stops the event sent before main.ts is read.' Safe 'safe,privacy,telemetry' (@('DOTNET_CLI_TELEMETRY_OPTOUT','POWERSHELL_TELEMETRY_OPTOUT','NEXT_TELEMETRY_DISABLED','NUXT_TELEMETRY_DISABLED','ASTRO_TELEMETRY_DISABLED','GATSBY_TELEMETRY_DISABLED','STORYBOOK_DISABLE_TELEMETRY','TURBO_TELEMETRY_DISABLED','VCPKG_DISABLE_METRICS','CHECKPOINT_DISABLE','DO_NOT_TRACK'|ForEach-Object{fReg 'HKCU:\Environment' $_ '1' $null String})+@((fReg 'HKCU:\Environment' NG_CLI_ANALYTICS 'false' $null String),(fReg 'HKCU:\Environment' SAM_CLI_TELEMETRY '0' $null String),(fReg 'HKCU:\Environment' AZURE_CORE_COLLECT_TELEMETRY '0' $null String))) 'Takes effect in new terminals after you sign out and back in. Choose individually to keep any you do not mind.' @('Needed only if you want to share anonymous usage data with these tools.','Fewer outgoing connections from your dev tools.','None; these only turn telemetry off.') -split
+AddT $s21 'Developer CLIs: turn off telemetry (.NET, PowerShell 7, Next.js, Nuxt, Astro, Gatsby, Angular, Storybook, Turborepo, vcpkg, Terraform/Prisma, AWS SAM, Azure CLI, DO_NOT_TRACK)' 'Sets per-user environment variables that tell common developer tools not to send usage data. POWERSHELL_TELEMETRY_OPTOUT only affects PowerShell 7+, not Windows PowerShell 5.1. Angular only collects usage data if you opted in; NG_CLI_ANALYTICS=false makes sure of it. For Storybook the environment variable is the only switch that also stops the event sent before main.ts is read.' Safe 'safe,privacy,telemetry' (@('DOTNET_CLI_TELEMETRY_OPTOUT','POWERSHELL_TELEMETRY_OPTOUT','NEXT_TELEMETRY_DISABLED','NUXT_TELEMETRY_DISABLED','ASTRO_TELEMETRY_DISABLED','GATSBY_TELEMETRY_DISABLED','STORYBOOK_DISABLE_TELEMETRY','TURBO_TELEMETRY_DISABLED','VCPKG_DISABLE_METRICS','CHECKPOINT_DISABLE','DO_NOT_TRACK'|ForEach-Object{fReg 'HKCU:\Environment' $_ '1' $null String})+@((fReg 'HKCU:\Environment' NG_CLI_ANALYTICS 'false' $null String),(fReg 'HKCU:\Environment' SAM_CLI_TELEMETRY '0' $null String),(fReg 'HKCU:\Environment' AZURE_CORE_COLLECT_TELEMETRY '0' $null String))) 'Takes effect in new terminals after you sign out and back in. Choose individually to keep any you do not mind.' @('Needed only if you want to share anonymous usage data with these tools.','Fewer outgoing connections from your dev tools.','None; these only turn telemetry off.') -split -when $haveDev
 
 AddT $s22 'Edge: turn off diagnostic data, personalization & feedback' 'Edge policies: DiagnosticData Off (Edge 122+), no personalization reporting, no user feedback, no recommendations. The older MetricsReportingEnabled and SendSiteInfoToImproveServices policies are obsolete since Edge 88 and are no longer written.' Safe 'safe,privacy,telemetry' @((fReg $EP DiagnosticData 0 $null),(fReg $EP PersonalizationReportingEnabled 0 $null),(fReg $EP UserFeedbackAllowed 0 $null),(fReg $EP ShowRecommendationsEnabled 0 $null)) 'Edge will say it is managed by your organization; that is just these policies. Edge before version 122 ignores DiagnosticData and follows the Windows diagnostic-data level (see Disable telemetry & diagnostic services).' @('Not needed unless you want to help Microsoft improve Edge.','Less data sent from Edge; fewer recommendations.','Edge shows the "managed" notice and has no feedback button. Microsoft marks DiagnosticData Off as "not recommended" because required diagnostics also stop.') -split -when $haveEdge
 AddT $s22 'Edge: harden browsing (Do Not Track, no third-party cookies, no prediction)' 'Sends Do Not Track, blocks third-party cookies and stops network prefetching.' Moderate '' @((fReg $EP ConfigureDoNotTrack 1 $null),(fReg $EP BlockThirdPartyCookies 1 $null),(fReg $EP NetworkPredictionOptions 2 $null)) 'Blocking third-party cookies can break some logins and embedded content. Choose individually.' @('Skip if you use sites that rely on third-party sign-in or embedded widgets.','Less cross-site tracking and fewer speculative connections.','Some logins, video embeds and payment widgets may stop working; pages may load a touch slower.') -split -when $haveEdge
@@ -485,9 +543,9 @@ AddT $s23 'Turn off clipboard history & cross-device clipboard' 'Disables Win+V 
 AddT $s23 'Turn off online speech recognition & inking/typing data' 'Turns off cloud speech recognition and stops Windows collecting your handwriting and typing samples to personalise recognition.' Safe 'privacy,telemetry' @((fReg 'HKCU:\Software\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy' HasAccepted 0 $null),(fReg 'HKCU:\Software\Microsoft\InputPersonalization' RestrictImplicitInkCollection 1 0),(fReg 'HKCU:\Software\Microsoft\InputPersonalization' RestrictImplicitTextCollection 1 0)) '' @('Use it unless you dictate with Win+H or use voice access that needs the online service.','Your voice and typing samples are not sent to Microsoft.','Online dictation (Win+H) and some voice features stop working; handwriting recognition learns less from you.') -split
 AddT $s12 'Enable Storage Sense (automatic weekly cleanup)' 'Turns on Windows built-in Storage Sense: every week it deletes temporary files and Recycle Bin items older than 30 days. Your Downloads folder is never touched.' Safe '' @((fReg $SS '01' 1 0),(fReg $SS '04' 1 0),(fReg $SS '08' 1 0),(fReg $SS '256' 30 0),(fReg $SS '2048' 7 0)) 'This is the safe version of a garbage-collector. It excludes your Downloads folder. Switching it on turns off "Disable Storage Sense auto cleanup".' @('Use it if your drive fills up and you forget to clean up. Switching it on turns off "Disable Storage Sense auto cleanup".','Frees space automatically with Windows own tool; no extra cleaner running in the background.','Recycle Bin items older than 30 days are gone for good.')
 AddT $s14 'Clean Windows Update leftovers (component cleanup)' 'Runs DISM /StartComponentCleanup, which deletes old versions of Windows components that newer updates replaced (WinSxS folder).' Safe '' @(fCmd 'DISM /Online /Cleanup-Image /StartComponentCleanup') 'Takes a few minutes and the window looks frozen. You cannot uninstall already-superseded updates afterwards.' @('Use it when the system drive is getting full. Windows also does this slowly on its own in the background.','Usually frees a few hundred MB to several GB.','Takes several minutes; updates installed before the cleanup can no longer be uninstalled.')
-AddT $s14 'Clear crash dumps & error reports' 'Deletes blue-screen minidumps, the full memory dump (MEMORY.DMP, can be many GB) and queued Windows Error Reporting files.' Safe '' @(fCmd 'Remove-Item "$env:SystemRoot\Minidump\*","$env:SystemRoot\MEMORY.DMP","$env:ProgramData\Microsoft\Windows\WER\*" -Recurse -Force -ErrorAction SilentlyContinue') 'Keep them if you are currently troubleshooting blue screens.' @('Use it when you are not investigating crashes. Keep them if you are diagnosing blue screens or someone asked for the dump.','Can free several GB if a full memory dump exists.','Past crash information is gone, so tools like WhoCrashed or BlueScreenView have nothing to analyse.')
+AddT $s14 'Clear crash dumps & error reports' 'Deletes blue-screen minidumps, the full memory dump (MEMORY.DMP, can be many GB) and queued Windows Error Reporting files.' Safe '' @(fCmd 'Clear-CrashDumps') 'Keep them if you are currently troubleshooting blue screens.' @('Use it when you are not investigating crashes. Keep them if you are diagnosing blue screens or someone asked for the dump.','Can free several GB if a full memory dump exists.','Past crash information is gone, so tools like WhoCrashed or BlueScreenView have nothing to analyse.')
 AddT $s14 'Clear thumbnail cache' 'Deletes Explorer picture and video thumbnail caches. Explorer closes for a moment and Windows restarts it by itself; thumbnails are rebuilt as you browse.' Safe '' @(fCmd '$me=[Diagnostics.Process]::GetCurrentProcess().SessionId;$ex=@(Get-Process explorer -ErrorAction SilentlyContinue|Where-Object SessionId -eq $me);$ex|Stop-Process -Force;$ex|Wait-Process -Timeout 5 -ErrorAction SilentlyContinue;Remove-Item "$UserLocal\Microsoft\Windows\Explorer\thumbcache_*.db" -Force -ErrorAction SilentlyContinue;for($i=0;$i -lt 10 -and -not(Get-Process explorer -ErrorAction SilentlyContinue|Where-Object SessionId -eq $me);$i++){Start-Sleep -Milliseconds 500};if(-not(Get-Process explorer -ErrorAction SilentlyContinue|Where-Object SessionId -eq $me)){Start-Process explorer}') 'Explorer windows will close and reopen.' @('Use it when thumbnails are wrong, blank or show old pictures.','Fixes broken previews; frees anything from a few MB to a few hundred MB.','Open Explorer windows close; folders full of photos and videos are slow to show thumbnails the first time.')
-AddT $s14 'Clear browser caches (Edge, Chrome, Firefox)' 'Deletes the cache folders (Cache, Code Cache, GPUCache, cache2) of every browser profile. Cookies, passwords, bookmarks and history are not touched.' Safe '' @(fCmd '$d=$UserLocal;foreach($b in "$d\Microsoft\Edge\User Data","$d\Google\Chrome\User Data"){Get-ChildItem -LiteralPath $b -Directory -ErrorAction SilentlyContinue|Where-Object{$_.Name -eq ''Default'' -or $_.Name -like ''Profile *''}|ForEach-Object{foreach($cd in ''Cache'',''Code Cache'',''GPUCache''){Remove-Item "$($_.FullName)\$cd\*" -Recurse -Force -ErrorAction SilentlyContinue}}};Get-ChildItem "$d\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue|ForEach-Object{Remove-Item "$($_.FullName)\cache2\*" -Recurse -Force -ErrorAction SilentlyContinue}') 'Close the browsers first. Pages load a little slower once while caches refill.' @('Use it when sites look broken or outdated, or to free space. Close the browsers first so nothing is in use.','Frees from hundreds of MB to several GB; fixes pages that keep showing old versions.','Sites load a bit slower until the cache refills. You stay signed in.')
+AddT $s14 'Clear browser caches (Edge, Chrome, Firefox)' 'Deletes the cache folders (Cache, Code Cache, GPUCache, cache2) of every browser profile. Cookies, passwords, bookmarks and history are not touched.' Safe '' @(fCmd 'Clear-BrowserCaches') 'Close the browsers first. Pages load a little slower once while caches refill.' @('Use it when sites look broken or outdated, or to free space. Close the browsers first so nothing is in use.','Frees from hundreds of MB to several GB; fixes pages that keep showing old versions.','Sites load a bit slower until the cache refills. You stay signed in.')
 AddT $s14 'Clear Delivery Optimization cache' 'Deletes update and Store-app files that Delivery Optimization keeps for re-use and sharing.' Safe '' @(fCmd 'Delete-DeliveryOptimizationCache -Force') '' @('Use it when the drive is full; Windows also trims this cache by itself.','Frees disk space (sometimes several GB after a feature update).','Files may be downloaded again if needed.')
 
 # ---------- G-Helper / Optimus laptops: shown only when NVIDIA display drivers are installed ----------
@@ -597,14 +655,14 @@ if(-not $warnBy){$warnBy=@{}}
 $warnBy['Turn off Memory Integrity (Core isolation)']='this lowers protection against malicious drivers. Windows Security will show a warning, and some work PCs or anti-cheat tools require Memory Integrity. Restart needed.'
 
 # ---------- Windows 11 extra apps (each package is its own switch) ----------
-$db+=fTw $s2 'Remove Windows 11 extra apps' 'Uninstalls newer Windows 11 extras: Outlook (new), Mail and Calendar (old), Dev Home, Microsoft To Do, Microsoft Family, Quick Assist, Bing Search, Journal and Phone Link with its helper. Each app is its own switch.' Moderate $sd Any '' @('Microsoft.OutlookForWindows','microsoft.windowscommunicationsapps','Microsoft.Windows.DevHome','Microsoft.Todos','MicrosoftCorporationII.MicrosoftFamily','MicrosoftCorporationII.QuickAssist','Microsoft.BingSearch','Microsoft.MicrosoftJournal','Microsoft.YourPhone','MicrosoftWindows.CrossDevice'|ForEach-Object{fApp $_}) 'Pick only what you never use. Keep Quick Assist if someone helps you remotely, Phone Link if you connect your phone, and Outlook (new) if you read email in it.'
+$db+=fTw $s2 'Remove Windows 11 extra apps' 'Uninstalls newer Windows 11 extras: Outlook (new), Mail and Calendar (old), Dev Home, Microsoft To Do, Microsoft Family, Quick Assist, Bing Search, Journal, Phone Link with its helper and the Widgets package (Windows Web Experience Pack). Each app is its own switch.' Moderate $sd Any '' @('Microsoft.OutlookForWindows','microsoft.windowscommunicationsapps','Microsoft.Windows.DevHome','Microsoft.Todos','MicrosoftCorporationII.MicrosoftFamily','MicrosoftCorporationII.QuickAssist','Microsoft.BingSearch','Microsoft.MicrosoftJournal','Microsoft.YourPhone','MicrosoftWindows.CrossDevice','MicrosoftWindows.Client.WebExperience'|ForEach-Object{fApp $_}) 'Pick only what you never use. Keep Quick Assist if someone helps you remotely, Phone Link if you connect your phone, and Outlook (new) if you read email in it.'
 $more['Remove Windows 11 extra apps']=@('Remove the ones you do not use; keep Quick Assist, Phone Link or Outlook if you rely on them.','Less clutter in Start; fewer apps updating and starting background tasks.','Removed apps must be reinstalled from the Microsoft Store (Quick Assist and Phone Link too). Apps not present on your Windows version are skipped.')
 
 # ---------- Memory (RAM) ----------
 $sMem='Memory (RAM)'
 $db+=fTw $sMem 'Disable Network Data Usage monitor (Ndu driver)' 'Disables the Ndu kernel driver (Services\Ndu, Start = 4), which counts network traffic per app for Settings > Data usage. Reboot needed. The key is only changed if it exists.' Moderate $sd 10 '' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Services\Ndu' Start 4 2 DWord $true) 'Use it if Task Manager shows non-paged pool memory growing for days. Undo restores the original start type (2 = automatic).'
 $more['Disable Network Data Usage monitor (Ndu driver)']=@('Use it if Task Manager > Performance > Memory shows "Non-paged pool" growing for hours or days. Leak reports were mostly tied to specific network drivers (e.g. Killer) on Windows 10.','Stops a known source of slowly growing kernel memory; nothing else in Windows depends on it.','Settings > Network > Data usage stops counting and data limits stop working. Needs a reboot.')
-$db+=fTw $sMem 'Disable memory compression' 'Runs Disable-MMAgent -MemoryCompression: Windows stops compressing rarely used memory pages and writes them to the page file instead. Undo runs Enable-MMAgent -MemoryCompression. Reboot needed.' Moderate $sd Any '' @(fCmd 'Disable-MMAgent -MemoryCompression' 'Enable-MMAgent -MemoryCompression' '-not (Get-MMAgent).MemoryCompression') 'Only on PCs with plenty of RAM (16 GB+) and a fast SSD. It does not free RAM: Task Manager shows less "Compressed" memory but more paging.'
+$db+=fTw $sMem 'Disable memory compression' 'Runs Disable-MMAgent -MemoryCompression: Windows stops compressing rarely used memory pages and writes them to the page file instead. Undo runs Enable-MMAgent -MemoryCompression. Needs the SysMain service (not Disabled). Reboot needed.' Moderate $sd Any '' @(fCmd 'Set-MemoryCompression $false' 'Set-MemoryCompression $true' '-not (Get-MMAgent).MemoryCompression' $null @('Cmd_382D9DC3F37109EF')) 'Only on PCs with plenty of RAM (16 GB+) and a fast SSD. It does not free RAM: Task Manager shows less "Compressed" memory but more paging.'
 $more['Disable memory compression']=@('Rarely; only with lots of RAM where you want to save the small CPU cost of compressing.','No CPU time spent compressing pages; the "System and compressed memory" process uses less RAM.','More page-file writes and less usable memory under load; worse on 8 GB PCs and on hard drives. Reboot needed.')
 $db+=fTw $sMem 'Empty standby memory (one-time)' 'Flushes the standby list and the low-priority standby list with the native Windows memory API (what RAMMap "Empty Standby List" does), without downloading anything. Logs free RAM before and after.' Safe $sd Any '' @(fCmd 'Clear-StandbyList') 'Use before a game or heavy task if "Free" memory is near zero. Not needed regularly: standby memory is a file cache that Windows gives up instantly when a program needs it.'
 $more['Empty standby memory (one-time)']=@('Only as a quick fix before a heavy game or task when "Free" memory is near zero, or to see how much RAM programs really use.','Free RAM jumps up immediately; can help games that stutter on low free memory.','Recently used files and apps load from disk again the first time; Windows refills the cache within minutes to hours, so the effect is temporary.')
@@ -675,7 +733,7 @@ function Do-Act($a,$undo){switch($a.K){
    Invoke-Expression $c|Out-Null
    if($LASTEXITCODE -and @(0,3010) -notcontains $LASTEXITCODE){throw "command exited with code $LASTEXITCODE"}      # 3010 = reboot required (DISM), not a failure
    if($a.U){$mk='HKLM:\SOFTWARE\DebloatHub\Applied';$id=Cmd-Id $a
-    if($undo){Remove-ItemProperty -Path $mk -Name $id -ErrorAction SilentlyContinue}
+    if($undo){foreach($oid in @($id)+@($a.Old)){if($oid){Remove-ItemProperty -Path $mk -Name $oid -ErrorAction SilentlyContinue}}}
     else{if(-not(Test-Path $mk)){New-Item $mk -Force|Out-Null};New-ItemProperty -Path $mk -Name $id -Value 1 -PropertyType DWord -Force|Out-Null}}}
  'Task'{$p=Task-Path $a.N;$n=Split-Path $a.N -Leaf
    if(-not(Get-ScheduledTask -TaskPath $p -TaskName $n -ErrorAction SilentlyContinue)){Log "   (task $n does not exist on this Windows build - nothing to do)"}
@@ -838,7 +896,7 @@ function Clean-DriverStore{
  try{foreach($d in @(Get-CimInstance Win32_PnPSignedDriver -ErrorAction Stop)){if($d.InfName){$inUse[([string]$d.InfName).ToLowerInvariant()]=$true}}}
  catch{throw "could not read which drivers devices are using ($($_.Exception.Message)) - nothing was deleted"}
  if($inUse.Count -eq 0){throw 'could not read which drivers devices are using - nothing was deleted'}   # fail closed: without this list nothing is safe to delete
- $plan=@(Select-StaleDrivers $drv $inUse)
+ $plan=Select-StaleDrivers $drv $inUse;$plan=@($plan)   # plain assignment: the function returns the list as ONE object (,$out); @(...) around the call would wrap it again
  $del=@($plan|Where-Object{$_.Action -eq 'delete'});$keep=@($plan|Where-Object{$_.Action -eq 'keep'})
  foreach($k in $keep){Log "   kept $($k.Pkg.Driver) ($($k.Pkg.ProviderName), $($k.Pkg.ClassName), $($k.Pkg.Version)): $($k.Why)"}
  if(-not $del.Count){Log '   no superseded driver packages found - nothing to clean';$global:LASTEXITCODE=0;return}
@@ -846,16 +904,157 @@ function Clean-DriverStore{
  foreach($x in $del){$p=$x.Pkg;$nm=[string]$p.Driver
   $sz=[long]0;$dir=Split-Path $p.OriginalFileName
   if($dir -like '*\DriverStore\FileRepository\*'){try{$sz=[long](Get-ChildItem -LiteralPath $dir -Recurse -File -Force -ErrorAction SilentlyContinue|Measure-Object Length -Sum).Sum}catch{$sz=[long]0}}
-  $global:LASTEXITCODE=0;$null=& pnputil.exe /delete-driver $nm /force 2>&1;$ec=$LASTEXITCODE
+  # no /force: with it pnputil deletes a package even while a device uses it. Our "in use" list only sees devices that are plugged in now,
+  # so Windows' own check is the second guard for unplugged devices (docks, USB devices, headsets) that are still bound to an older package.
+  $global:LASTEXITCODE=0;$out=& pnputil.exe /delete-driver $nm 2>&1;$ec=$LASTEXITCODE
   if($ec -eq 0 -or $ec -eq 3010){$ok++;$bytes+=$sz;Log "   deleted $nm ($($p.ProviderName), $($p.ClassName), $($p.Version), $(if($p.Date){$p.Date.ToString('yyyy-MM-dd')})); the newer $($x.Newest.Driver) stays"}
-  else{$fail+="$nm (exit code $ec)";Log "   ! could not delete $nm (exit code $ec)"}}
+  else{$fail+=$nm;Log "   kept $nm ($($p.ProviderName), $($p.ClassName), $($p.Version)): Windows refused to delete it (exit code $ec), usually because a device that is not plugged in right now still uses it. $((@($out)|Select-Object -Last 1))"}}
  $global:LASTEXITCODE=0
- Log ('   Driver Store cleanup: {0} package(s) deleted, about {1:N0} MB freed, {2} kept on purpose, {3} failed.' -f $ok,($bytes/1MB),$keep.Count,$fail.Count)
- if($fail.Count){throw "some packages could not be deleted: $($fail -join ', ')"}}
+ Log ('   Driver Store cleanup: {0} package(s) deleted, about {1:N0} MB freed, {2} kept on purpose, {3} kept because Windows still needs them.' -f $ok,($bytes/1MB),$keep.Count,$fail.Count)}
 
-function Log($m){$log.AppendText("$m`r`n");$log.ScrollToEnd();if($slog){$slog.AppendText("$m`r`n");$slog.ScrollToEnd()};$w.Dispatcher.Invoke([Action]{},[Windows.Threading.DispatcherPriority]::Background)}
+# ---------- Safe folder cleanup: never follows junctions or symbolic links ----------
+# Windows PowerShell 5.1's Remove-Item -Recurse follows directory junctions, so a junction planted in a user-writable folder (Temp, browser
+# caches) would make this elevated process delete whatever it points to. Clear-Folder walks the tree itself and removes links, never their targets.
+function Clear-Folder($dir,$keep=@()){             # empties $dir (the folder itself stays); returns the number of items deleted
+ if(-not $dir -or -not [IO.Directory]::Exists($dir)){return 0}
+ $di=New-Object IO.DirectoryInfo $dir
+ if($di.Attributes -band [IO.FileAttributes]::ReparsePoint){return 0}            # the folder itself is a link: leave it and its target alone
+ $n=0;$items=@();try{$items=@($di.GetFileSystemInfos())}catch{return 0}
+ foreach($e in $items){
+  if($keep -contains $e.Name){continue}
+  try{
+   if($e.Attributes -band [IO.FileAttributes]::ReparsePoint){                     # junction / symlink: delete the link only
+    if($e -is [IO.DirectoryInfo]){[IO.Directory]::Delete($e.FullName,$false)}else{$e.Delete()};$n++;continue}
+   if($e -is [IO.DirectoryInfo]){$n+=Clear-Folder $e.FullName;$e.Attributes=[IO.FileAttributes]::Directory;$e.Delete()}   # non-recursive delete: skipped if something inside was in use
+   else{if($e.Attributes -band [IO.FileAttributes]::ReadOnly){$e.Attributes=[IO.FileAttributes]::Normal};$e.Delete()}
+   $n++}
+  catch{}}                                                                         # in use or access denied: skip it, like Windows' own cleanup
+ return $n}
+function Clear-TempAndBin{
+ $n=(Clear-Folder "$UserLocal\Temp")+(Clear-Folder "$env:SystemRoot\Temp")
+ if($OtherUser){   # Clear-RecycleBin empties the bin of the account running DebloatHub; the signed-in user's bin is <drive>\$Recycle.Bin\<their SID>
+  foreach($d in @(Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue|Where-Object{$_.Root -match '^[A-Za-z]:\\$'})){$n+=Clear-Folder (Join-Path $d.Root ('$Recycle.Bin\'+$UserSid)) @('desktop.ini')}}
+ else{Clear-RecycleBin -Force -ErrorAction SilentlyContinue}
+ Log "   $n item(s) deleted (files in use were skipped)."
+ $global:LASTEXITCODE=0}
+function Clear-CrashDumps{
+ $n=(Clear-Folder "$env:SystemRoot\Minidump")+(Clear-Folder "$env:ProgramData\Microsoft\Windows\WER\ReportQueue")+(Clear-Folder "$env:ProgramData\Microsoft\Windows\WER\ReportArchive")+(Clear-Folder "$env:ProgramData\Microsoft\Windows\WER\Temp")
+ $md="$env:SystemRoot\MEMORY.DMP";if([IO.File]::Exists($md)){try{[IO.File]::Delete($md);$n++}catch{Log "   (MEMORY.DMP is in use and was kept)"}}
+ Log "   $n item(s) deleted."
+ $global:LASTEXITCODE=0}
+function Clear-BrowserCaches{
+ $n=0
+ foreach($b in "$UserLocal\Microsoft\Edge\User Data","$UserLocal\Google\Chrome\User Data"){
+  foreach($pd in @(Get-ChildItem -LiteralPath $b -Directory -ErrorAction SilentlyContinue|Where-Object{$_.Name -eq 'Default' -or $_.Name -like 'Profile *'})){
+   foreach($cd in 'Cache','Code Cache','GPUCache'){$n+=Clear-Folder (Join-Path $pd.FullName $cd)}}}
+ foreach($pd in @(Get-ChildItem -LiteralPath "$UserLocal\Mozilla\Firefox\Profiles" -Directory -ErrorAction SilentlyContinue)){$n+=Clear-Folder (Join-Path $pd.FullName 'cache2')}
+ Log "   $n item(s) deleted (files of browsers that are still open were skipped)."
+ $global:LASTEXITCODE=0}
+function Reset-WUCache{
+ try{Stop-Service wuauserv,bits -Force -ErrorAction Stop
+  $n=Clear-Folder "$env:SystemRoot\SoftwareDistribution\Download";Log "   $n item(s) deleted from the update download cache."}
+ finally{Start-Service wuauserv,bits -ErrorAction SilentlyContinue}               # always start them again, even if stopping or deleting failed
+ $global:LASTEXITCODE=0}
 
-function Fits($t){(($t.Win -eq 'Any') -or ($t.Win -eq '11' -and $W11) -or ($t.Win -eq '10' -and -not $W11)) -and -not($OtherUser -and @($t.Acts|Where-Object{$_.K -eq 'Spi'}).Count)}
+# ---------- Cloudflare DNS: physical adapters only; each adapter's own DNS servers are recorded and put back on undo ----------
+function Get-DnsAdapters{@(Get-NetAdapter -Physical -ErrorAction SilentlyContinue|Where-Object Status -eq Up)}   # not VPN, Hyper-V, WSL or Tailscale adapters
+function Get-StaticDns($guid){                    # servers typed in by hand (NameServer); empty = automatic from the router (DHCP)
+ $o=@()
+ foreach($k in "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$guid","HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\$guid"){
+  $v=(Get-ItemProperty -LiteralPath $k -Name NameServer -ErrorAction SilentlyContinue).NameServer
+  if("$v".Trim()){$o+=@("$v" -split '[,\s]+'|Where-Object{$_})}}
+ ,$o}
+function Set-CloudflareDns{
+ $ad=Get-DnsAdapters;if(-not $ad.Count){throw 'no connected physical network adapter was found'}
+ $k='HKLM:\SOFTWARE\DebloatHub\Dns';if(-not(Test-Path -LiteralPath $k)){New-Item $k -Force|Out-Null}
+ foreach($a in $ad){$g=[string]$a.InterfaceGuid
+  if($null -eq (Get-ItemProperty -LiteralPath $k -Name $g -ErrorAction SilentlyContinue).$g){   # record the original only once
+   $st=Get-StaticDns $g;New-ItemProperty -LiteralPath $k -Name $g -Value (ConvertTo-Json -InputObject @{name=[string]$a.Name;static=$st} -Compress) -PropertyType String -Force|Out-Null}
+  try{Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses '1.1.1.1','1.0.0.1','2606:4700:4700::1111','2606:4700:4700::1001' -ErrorAction Stop}
+  catch{Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses '1.1.1.1','1.0.0.1'}}   # IPv6 is turned off on this adapter
+ $global:LASTEXITCODE=0}
+function Undo-CloudflareDns{
+ $k='HKLM:\SOFTWARE\DebloatHub\Dns';$rec=@{}
+ $p=Get-ItemProperty -LiteralPath $k -ErrorAction SilentlyContinue
+ if($p){foreach($pr in $p.PSObject.Properties){if($pr.Name -like '{*'){try{$rec[$pr.Name]=$pr.Value|ConvertFrom-Json}catch{}}}}
+ foreach($a in @(Get-NetAdapter -ErrorAction SilentlyContinue)){$g=[string]$a.InterfaceGuid
+  if($rec.ContainsKey($g)){$st=@(@($rec[$g].static)|Where-Object{$_})
+   if($st.Count){Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses $st}else{Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ResetServerAddresses}}
+  elseif((@((Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses) -join ',') -eq '1.1.1.1,1.0.0.1'){
+   Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ResetServerAddresses}}   # set by DebloatHub 1.0.x, which kept no record: back to automatic
+ Remove-Item -LiteralPath $k -Recurse -Force -ErrorAction SilentlyContinue
+ $global:LASTEXITCODE=0}
+function Test-CloudflareDns{$ad=Get-DnsAdapters;[bool]($ad.Count -and -not @($ad|Where-Object{(@((Get-DnsClientServerAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4).ServerAddresses) -join ',') -ne '1.1.1.1,1.0.0.1'}).Count)}
+
+# ---------- Ultimate Performance plan: undo returns to the plan that was active before, not always Balanced ----------
+function Get-ActiveScheme{if((powercfg /getactivescheme|Out-String) -match '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}'){$Matches[0].ToLowerInvariant()}}
+function Enable-UltimatePlan{
+ $g='ec2056a3-39a8-4408-993a-3b596535ebe1';$k='HKLM:\SOFTWARE\DebloatHub\Power';$cur=Get-ActiveScheme
+ if($cur -and $cur -ne $g -and $null -eq (Get-ItemProperty -LiteralPath $k -Name PreviousScheme -ErrorAction SilentlyContinue)){
+  if(-not(Test-Path -LiteralPath $k)){New-Item $k -Force|Out-Null};New-ItemProperty -LiteralPath $k -Name PreviousScheme -Value $cur -PropertyType String -Force|Out-Null}
+ if(-not((powercfg /list|Out-String) -match $g)){$null=powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 $g;if($LASTEXITCODE){throw 'Windows refused to create the Ultimate Performance plan (some laptops hide it)'}}
+ $null=powercfg /setactive $g;if($LASTEXITCODE){throw "powercfg /setactive failed (exit code $LASTEXITCODE)"}
+ $global:LASTEXITCODE=0}
+function Disable-UltimatePlan{
+ $g='ec2056a3-39a8-4408-993a-3b596535ebe1';$k='HKLM:\SOFTWARE\DebloatHub\Power';$bal='381b4222-f694-41f0-9685-ff5bb260df2e'
+ $prev=(Get-ItemProperty -LiteralPath $k -Name PreviousScheme -ErrorAction SilentlyContinue).PreviousScheme;$list=powercfg /list|Out-String
+ $to=if($prev -and $prev -ne $g -and $list -match [regex]::Escape($prev)){$prev}else{$bal}
+ $null=powercfg /setactive $to
+ if($list -match $g){$null=powercfg /delete $g}
+ Remove-ItemProperty -LiteralPath $k -Name PreviousScheme -ErrorAction SilentlyContinue
+ Log "   active power plan: $(if($to -eq $bal){'Balanced'}else{"the plan that was active before ($to)"})"
+ $global:LASTEXITCODE=0}
+
+# ---------- Memory compression is run by the SysMain service: give a clear message instead of a cryptic MMAgent error ----------
+function Set-MemoryCompression([bool]$on){
+ $sm=Get-Service SysMain -ErrorAction SilentlyContinue
+ if($sm -and "$($sm.StartType)" -eq 'Disabled'){throw 'memory compression is managed by the SysMain service, which is disabled. Switch off "Disable SysMain (Superfetch)" (Background Services), press Apply, then try this again.'}
+ if($sm -and "$($sm.Status)" -ne 'Running'){try{Start-Service SysMain -ErrorAction Stop}catch{throw "memory compression is managed by the SysMain service, which could not be started: $($_.Exception.Message)"}}
+ if($on){Enable-MMAgent -MemoryCompression}else{Disable-MMAgent -MemoryCompression}
+ $global:LASTEXITCODE=0}
+
+# ---------- Run a program as the signed-in user (when UAC elevated DebloatHub to a different administrator account) ----------
+function Invoke-AsUser($exe,$arg,$timeoutSec=600){
+ $acct=try{([Security.Principal.SecurityIdentifier]$UserSid).Translate([Security.Principal.NTAccount]).Value}catch{$UserSid}
+ $tn="RunAsUser-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+ $act=New-ScheduledTaskAction -Execute $exe -Argument $arg
+ $pr=New-ScheduledTaskPrincipal -UserId $acct -LogonType Interactive -RunLevel Limited
+ Register-ScheduledTask -TaskPath '\DebloatHub\' -TaskName $tn -Action $act -Principal $pr -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) -Force|Out-Null
+ try{Start-ScheduledTask -TaskPath '\DebloatHub\' -TaskName $tn;Start-Sleep -Seconds 2
+  $t0=Get-Date;while(((Get-Date)-$t0).TotalSeconds -lt $timeoutSec -and "$((Get-ScheduledTask -TaskPath '\DebloatHub\' -TaskName $tn).State)" -eq 'Running'){Start-Sleep -Seconds 1}
+  return (Get-ScheduledTaskInfo -TaskPath '\DebloatHub\' -TaskName $tn).LastTaskResult}
+ finally{Unregister-ScheduledTask -TaskPath '\DebloatHub\' -TaskName $tn -Confirm:$false -ErrorAction SilentlyContinue}}
+
+# ---------- OneDrive: uninstall for the signed-in user and keep new accounts from getting it again ----------
+function Uninstall-OneDrive{
+ $p=@(@("$env:SystemRoot\SysWOW64\OneDriveSetup.exe","$env:SystemRoot\System32\OneDriveSetup.exe")+@(Get-ChildItem "$UserLocal\Microsoft\OneDrive\*\OneDriveSetup.exe","${env:ProgramFiles}\Microsoft OneDrive\*\OneDriveSetup.exe" -ErrorAction SilentlyContinue|ForEach-Object FullName)|Where-Object{Test-Path -LiteralPath $_})|Select-Object -First 1
+ if(-not $p){throw 'OneDriveSetup.exe was not found - OneDrive is probably already uninstalled'}
+ Get-Process OneDrive -ErrorAction SilentlyContinue|Where-Object SessionId -eq ([Diagnostics.Process]::GetCurrentProcess().SessionId)|Stop-Process -Force -ErrorAction SilentlyContinue
+ if($OtherUser){Log '   running the uninstaller as the signed-in user (DebloatHub itself runs as another administrator account)';$rc=Invoke-AsUser $p '/uninstall';if($rc){Log "   uninstaller exit code: $rc"}}
+ else{Start-Process -FilePath $p -ArgumentList '/uninstall' -Wait}
+ # Windows copies the Default profile's "OneDriveSetup" Run entry into every NEW account, which reinstalls OneDrive there
+ $dp=try{[Environment]::ExpandEnvironmentVariables([string](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' -ErrorAction Stop).Default)}catch{"$env:SystemDrive\Users\Default"}
+ $nt=Join-Path $dp 'NTUSER.DAT';$hv='HKU\DebloatHub_DefaultUser'
+ if(Test-Path -LiteralPath $nt){$null=& reg.exe load $hv $nt 2>&1
+  if($LASTEXITCODE -eq 0){try{$null=& reg.exe delete "$hv\Software\Microsoft\Windows\CurrentVersion\Run" /v OneDriveSetup /f 2>&1;if($LASTEXITCODE -eq 0){Log '   removed the OneDrive setup entry from the default profile (new accounts no longer get OneDrive)'}}
+   finally{[GC]::Collect();[GC]::WaitForPendingFinalizers();$null=& reg.exe unload $hv 2>&1}}}
+ $global:LASTEXITCODE=0}
+
+# ---------- Undo records: did DebloatHub itself change this? ----------
+function Cmd-Marked($a){$mk='HKLM:\SOFTWARE\DebloatHub\Applied';foreach($id in @(Cmd-Id $a)+@($a.Old)){if($id -and (Get-ItemProperty -Path $mk -Name $id -ErrorAction SilentlyContinue).$id){return $true}};$false}   # Old = marker ids written by older versions of the same command
+function Has-Record($acts){foreach($a in @($acts)){if(-not(Act-Revertible $a)){continue};if($a.K -eq 'Cmd'){if(Cmd-Marked $a){return $true}}elseif(Snap-Read $a){return $true}};$false}
+
+function Log($m){
+ if($LogFile){try{[IO.File]::AppendAllText($LogFile,("{0:HH:mm:ss}  {1}`r`n" -f (Get-Date),$m))}catch{}}
+ if($Headless){Write-Host $m;return}
+ $log.AppendText("$m`r`n");$log.ScrollToEnd();if($slog){$slog.AppendText("$m`r`n");$slog.ScrollToEnd()};$w.Dispatcher.Invoke([Action]{},[Windows.Threading.DispatcherPriority]::Background)}
+
+function Fits-Ver($t){($t.Win -eq 'Any') -or ($t.Win -eq '11' -and $W11) -or ($t.Win -eq '10' -and -not $W11)}
+function Spi-Blocked($t){[bool]($OtherUser -and @($t.Acts|Where-Object{$_.K -eq 'Spi'}).Count)}   # visual effects are saved per account: not changeable for another user
+function Fits($t){(Fits-Ver $t) -and -not(Spi-Blocked $t)}
+# A tweak for the OTHER Windows version that DebloatHub applied before (e.g. on Windows 10, then the PC was upgraded to 11): it can no longer
+# be applied, but it must still be possible to undo it, otherwise the change would be stuck on the PC forever.
+function Is-Leftover($t){(-not(Fits-Ver $t)) -and -not(Spi-Blocked $t) -and (Has-Record $t.Acts)}
 function Undoable($t){-not @($t.Acts|Where-Object{$_.K -eq 'App' -or ($_.K -eq 'Cmd' -and -not $_.U)}).Count}
 function Act-Label($a){switch($a.K){
  'App'{if($LBL.ContainsKey($a.N)){$LBL[$a.N]}else{$n=$a.N -replace '^\*|\*$','' -replace '^Microsoft\.','' -replace '\.',' ';($n -creplace '(?<=[a-z0-9])(?=[A-Z])',' ').Trim()}}
@@ -874,7 +1073,7 @@ function Task-Path($n){$p=Split-Path $n;if(-not $p.EndsWith('\')){$p+='\'};$p}
 function Act-Absent($a){switch($a.K){            # target does not exist on this PC (Test-Act reports such acts as applied; there is nothing to restore either)
  {$_ -in 'Svc','SvcM'}{return -not(Get-Service $a.N -ErrorAction SilentlyContinue)}
  'Task'{return -not(Get-ScheduledTask -TaskPath (Task-Path $a.N) -TaskName (Split-Path $a.N -Leaf) -ErrorAction SilentlyContinue)}
- 'Feat'{return -not(Get-WindowsOptionalFeature -Online -FeatureName $a.N -ErrorAction SilentlyContinue)}
+ 'Feat'{if($script:fs -and $script:fs.Count){return -not $script:fs.ContainsKey([string]$a.N)};return -not(Get-WindowsOptionalFeature -Online -FeatureName $a.N -ErrorAction SilentlyContinue)}
  'Json'{return -not(Test-Path -LiteralPath (Split-Path $a.P))}
  'Reg'{return [bool]($a.Opt -and -not(Test-Path -LiteralPath $a.P))}
  default{return $false}}}
@@ -882,7 +1081,7 @@ function Act-Revertible($a){-not ($a.K -eq 'App' -or ($a.K -eq 'Cmd' -and -not $
 function Can-Undo($u){[bool]@($u.Acts|Where-Object{Act-Revertible $_}).Count}   # false = nothing in this switch can be undone automatically (removed apps, run-once commands)
 function Pending{$a=@();$r=@();$b=@()
  foreach($u in $units){if(-not $u.Box.IsEnabled){continue};$on=[bool]$u.Box.IsChecked;$ap=($ust[$u.Key] -eq 'Applied')   # $ust comes from Scan (detectors / markers)
-  if($on -and -not $ap){$a+=,$u}
+  if($on -and -not $ap){if(Fits $u.T){$a+=,$u}}                                      # leftovers can only be undone
   elseif(-not $on -and $ap){if(Can-Undo $u){$r+=,$u}else{$b+=,$u}}}                  # never schedule a revert that has no undo command
  ,@($a,$r,$b)}
 function Run{
@@ -901,10 +1100,11 @@ function Run{
  $wn=@($add|ForEach-Object{$_.T.Name}|Select-Object -Unique|Where-Object{$warnBy.ContainsKey($_)})
  if($wn.Count){$ic='Warning';$msg+="`n`nRead before continuing:";foreach($n in $wn){$msg+="`n - $($n): $($warnBy[$n])"}}
  if(-not $dry -and [Windows.MessageBox]::Show($msg,'DebloatHub','YesNo',$ic) -ne 'Yes'){return}
- $items=@();foreach($set in @(@('REVERT',$rem,$true),@('APPLY',$add,$false))){foreach($u in $set[1]){$items+=,@{Label="[$($set[0])] $($u.Key -replace '\|',' > ')";Acts=@($u.Acts|ForEach-Object{Copy-Act $_});Undo=$set[2]}}}
+ $items=Build-Items $add $rem
  $rp=[bool](-not $dry -and $add.Count -and $chkRP.IsChecked)
  Start-Bg 'Applying changes...' @{items=$items;dry=$dry;rp=$rp} $APPLYCODE {param($r);Show-ApplyResult $r;Scan}}
 
+function Build-Items($add,$rem){$items=@();foreach($set in @(@('REVERT',$rem,$true),@('APPLY',$add,$false))){foreach($u in $set[1]){$items+=,@{Label="[$($set[0])] $($u.Key -replace '\|',' > ')";Acts=@($u.Acts|ForEach-Object{Copy-Act $_});Undo=$set[2]}}};,$items}
 function Invoke-Now($t,$undo){                  # runs ONE tweak right away through the normal apply engine (idempotent, verified, snapshot-based)
  if($script:busy){Log 'Another operation is still running.';return}
  $dry=[bool]$chkDry.IsChecked;$parts=@($actSt[$t.Name]);$nm=$t.Name
@@ -939,22 +1139,24 @@ function Test-Act($a){switch($a.K){
  'Json'{if(-not(Test-Path -LiteralPath (Split-Path $a.P))){return $true}
    try{$o=Json-Read $a.P;$pr=$o.PSObject.Properties[$a.N];return [bool]($pr -and ("$($pr.Value)" -eq "$($a.V)"))}catch{return $null}}
  'Cmd'{if($a.T){try{$r=Invoke-Expression $a.T;if($null -eq $r){return $null};return [bool]$r}catch{return $null}}      # real detector
-   if($a.U){$id=Cmd-Id $a;return [bool](Get-ItemProperty -Path 'HKLM:\SOFTWARE\DebloatHub\Applied' -Name $id -ErrorAction SilentlyContinue).$id}   # undoable, no detector: did we apply it?
+   if($a.U){return (Cmd-Marked $a)}                                                                                # undoable, no detector: did we apply it?
    return $null}                                                                                                     # run-once command: state is unknowable
  default{return $null}}}
 function Get-StateEx($t){                       # overall state + the state of every single action (same order as $t.Acts)
  $r=@();foreach($a in $t.Acts){$r+=,(Safe-Test $a)}
  $k=@($r|Where-Object{$null -ne $_})
  $st=if(-not $k.Count){'Unknown'}else{$y=@($k|Where-Object{$_}).Count;if($y -eq $k.Count){'Applied'}elseif($y -eq 0){'Not applied'}else{'Partial'}}
+ # "Applied" only because every target is missing (service, task, feature, optional key, folder not on this PC) is not the same as applied
+ if($st -eq 'Applied' -and @($t.Acts).Count -and -not @($t.Acts|Where-Object{-not(Act-Absent $_)}).Count){$st='Not present'}
  @{State=$st;Acts=@($r|ForEach-Object{if($null -eq $_){'?'}elseif($_){'Y'}else{'N'}})}}
 function Get-State($t){(Get-StateEx $t).State}
 function Set-Status($t,$st){
- $m=@{'Applied'=@('Applied','#2E7D32');'Partial'=@('Partial','#EF6C00');'Not applied'=@('Not applied','#5A5A5A');'Unknown'=@('One-time action','#455A64');'N/A'=@('Not available here','#444444');'Applied-perm'=@('Applied - cannot be undone','#6D4C41')}[$st]
+ $m=@{'Applied'=@('Applied','#2E7D32');'Partial'=@('Partial','#EF6C00');'Not applied'=@('Not applied','#5A5A5A');'Unknown'=@('One-time action','#455A64');'N/A'=@('Not available here','#444444');'Applied-perm'=@('Applied - cannot be undone','#6D4C41');'Leftover'=@('Left over from the other Windows version - switch off to undo','#8E24AA');'Not present'=@('Not on this PC','#444444')}[$st]
  $b=$sb[$t.Name];$b.Background=$bc.ConvertFromString($m[1]);$b.Child.Text=$m[0];$b.Visibility='Visible'
- if($rv.ContainsKey($t.Name)){$rv[$t.Name].Visibility=$(if($st -eq 'Partial' -and (Can-Undo $t)){'Visible'}else{'Collapsed'})}}   # dedicated button only for partly applied tweaks
+ if($rv.ContainsKey($t.Name)){$rv[$t.Name].Visibility=$(if($st -in 'Partial','Leftover' -and (Can-Undo $t)){'Visible'}else{'Collapsed'})}}   # dedicated button only for partly applied tweaks
 function Sync-Masters{foreach($k in @($subsOf.Keys)){$boxOf[$k].IsChecked=(@($subsOf[$k]|Where-Object{-not $_.IsChecked}).Count -eq 0)}}
 function Update-Bar{$n=0;$pt=@{}
- foreach($u in $units){if(-not $u.Box.IsEnabled){continue};if((([bool]$u.Box.IsChecked) -ne ($ust[$u.Key] -eq 'Applied')) -and ([bool]$u.Box.IsChecked -or (Can-Undo $u))){$n++;$pt[$u.T.Name]=$true}}
+ foreach($u in $units){if(-not $u.Box.IsEnabled){continue};$on=[bool]$u.Box.IsChecked;if(($on -ne ($ust[$u.Key] -eq 'Applied')) -and (($on -and (Fits $u.T)) -or (-not $on -and (Can-Undo $u)))){$n++;$pt[$u.T.Name]=$true}}
  foreach($k in @($barOf.Keys)){$barOf[$k].Visibility=if($pt[$k]){'Visible'}else{'Hidden'}}
  $bApply.IsEnabled=($n -gt 0);$bApply.Content=if($n){"Apply $n change$(if($n -ne 1){'s'})"}else{'No changes'}}
 # ---------- Background jobs: the window stays usable while scans and applies run ----------
@@ -969,7 +1171,7 @@ function Log($m){[void]$sync.Q.Enqueue("$m")}
 function Get-FnText($n){$c=Get-Command $n -CommandType Function;$a=$c.ScriptBlock.Ast
  if($a -isnot [Management.Automation.Language.FunctionDefinitionAst] -and $a.Parent -is [Management.Automation.Language.FunctionDefinitionAst]){$a=$a.Parent}
  if($a -is [Management.Automation.Language.FunctionDefinitionAst]){$a.Extent.Text}else{"function $n {`n$($c.ScriptBlock.ToString())`n}"}}
-$ENGINE_TXT=$PRE+"`n"+((@('Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Set-DxFlag','Test-DxFlag','Get-SysCheck','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
+$ENGINE_TXT=$PRE+"`n"+((@('Fits-Ver','Spi-Blocked','Is-Leftover','Has-Record','Cmd-Marked','Clear-Folder','Clear-TempAndBin','Clear-CrashDumps','Clear-BrowserCaches','Reset-WUCache','Get-DnsAdapters','Get-StaticDns','Set-CloudflareDns','Undo-CloudflareDns','Test-CloudflareDns','Get-ActiveScheme','Enable-UltimatePlan','Disable-UltimatePlan','Set-MemoryCompression','Invoke-AsUser','Uninstall-OneDrive','Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Set-DxFlag','Test-DxFlag','Get-SysCheck','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
 # ---------- Thread safety: WPF objects (CheckBox, Border...) live ONLY on the UI thread ----------
 # Background runspaces receive plain snapshots (strings, numbers, bools, arrays, hashtables) and return plain hashtables.
 function Copy-Act($a){$c=@{};foreach($k in $a.Keys){$c[$k]=$a[$k]};$c}      # acts hold only strings/numbers/bools/$null
@@ -985,17 +1187,27 @@ function Assert-Pure($o,$path='root',$depth=0){                              # g
  if($o -is [Collections.IEnumerable]){$i=0;foreach($x in $o){Assert-Pure $x "$path[$i]" ($depth+1);$i++};return}
  throw "Non-plain object ($($o.GetType().FullName)) at $path. Only strings, numbers, bools, arrays and hashtables may enter a background runspace."}
 function Invoke-UI([scriptblock]$uiBlock){if($w.Dispatcher.CheckAccess()){& $uiBlock}else{$w.Dispatcher.Invoke([Action]$uiBlock)}}   # NOTE: the parameter must not be called $sb - that is the status-badge table the callee reads (dynamic scoping)   # always applies control changes on the UI dispatcher
-function Start-Bg($msg,$vars,$code,$done){
- try{foreach($k in $vars.Keys){Assert-Pure $vars[$k] $k}}catch{Log "! background job refused: $($_.Exception.Message)";return}
- $script:busy=$true;Show-Load $msg;$bApply.IsEnabled=$false;$bScan.IsEnabled=$false
+function New-EngineJob($vars,$code){                                     # one background runspace with the engine functions and the plain input data
  $q=New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
  $sync=[hashtable]::Synchronized(@{Q=$q;Msg='';Result=$null})
  $rs=[runspacefactory]::CreateRunspace();$rs.ApartmentState='STA';$rs.Open()
- $rs.SessionStateProxy.SetVariable('sync',$sync);$rs.SessionStateProxy.SetVariable('W11',$W11);$rs.SessionStateProxy.SetVariable('OtherUser',$OtherUser);$rs.SessionStateProxy.SetVariable('UserLocal',$UserLocal)
+ foreach($kv in @{sync=$sync;W11=$W11;OtherUser=$OtherUser;UserLocal=$UserLocal;UserSid=$UserSid}.GetEnumerator()){$rs.SessionStateProxy.SetVariable($kv.Key,$kv.Value)}
  foreach($k in $vars.Keys){$rs.SessionStateProxy.SetVariable($k,$vars[$k])}
  $ps=[powershell]::Create();$ps.Runspace=$rs;[void]$ps.AddScript($ENGINE_TXT+"`n"+$code)
- $script:job=@{PS=$ps;RS=$rs;Sync=$sync;H=$ps.BeginInvoke();Done=$done}
+ @{PS=$ps;RS=$rs;Sync=$sync;H=$ps.BeginInvoke()}}
+function Start-Bg($msg,$vars,$code,$done){
+ try{foreach($k in $vars.Keys){Assert-Pure $vars[$k] $k}}catch{Log "! background job refused: $($_.Exception.Message)";return}
+ $script:busy=$true;Show-Load $msg;$bApply.IsEnabled=$false;$bScan.IsEnabled=$false
+ $script:job=New-EngineJob $vars $code;$script:job.Done=$done
  $timer.Start()}
+function Invoke-Sync($vars,$code){                                       # unattended mode: same engine, but wait for the result (there is no window to keep responsive)
+ foreach($k in $vars.Keys){Assert-Pure $vars[$k] $k}
+ $j=New-EngineJob $vars $code;$m=$null
+ while(-not $j.H.IsCompleted){while($j.Sync.Q.TryDequeue([ref]$m)){Log $m};Start-Sleep -Milliseconds 200}
+ try{[void]$j.PS.EndInvoke($j.H)}catch{Log "! $($_.Exception.Message)"}
+ foreach($er in @($j.PS.Streams.Error)){Log "! $($er.ToString())"}
+ while($j.Sync.Q.TryDequeue([ref]$m)){Log $m}
+ $r=$j.Sync.Result;$j.PS.Dispose();$j.RS.Dispose();$r}
 $SCANCODE=@'
 # Input ($tweaks, $units) = plain snapshots from New-ScanData. Output = plain hashtables only; no WPF object is ever touched here.
 try{
@@ -1004,14 +1216,22 @@ try{
  $sync.Msg='Reading Windows features...'
  $script:fs=@{};try{Get-WindowsOptionalFeature -Online -ErrorAction Stop|ForEach-Object{$script:fs[$_.FeatureName]=[string]$_.State}}catch{Log '   (could not read optional features)'}
  $sync.Msg='Checking settings, services and tasks...'
- $stat=@{};$ust=@{};$ast=@{}
- foreach($t in $tweaks){if(-not(Fits $t)){$stat[$t.Name]='N/A'}else{$g=Get-StateEx $t;$stat[$t.Name]=$g.State;$ast[$t.Name]=$g.Acts}}
+ $stat=@{};$ust=@{};$ast=@{};$orph=@{}
+ foreach($t in $tweaks){
+  if(Fits $t){$g=Get-StateEx $t;$stat[$t.Name]=$g.State;$ast[$t.Name]=$g.Acts}
+  elseif(Is-Leftover $t){$g=Get-StateEx $t;$ast[$t.Name]=$g.Acts;$stat[$t.Name]=$(if($g.State -in 'Applied','Partial'){'Leftover'}else{'N/A'})}
+  else{$stat[$t.Name]='N/A'}}
  foreach($u in $units){
-  if(-not(Fits $u)){$ust[$u.Key]='N/A';continue}
-  $ust[$u.Key]=if($u.Sub){if((Safe-Test $u.Acts[0]) -eq $true){'Applied'}else{'Not applied'}}else{$stat[$u.TweakName]}}
+  if(-not(Fits $u)){
+   if($stat[$u.TweakName] -eq 'Leftover' -and (Is-Leftover $u)){   # applied for the other Windows version: offer it for undo only
+    $orph[$u.Key]=$true
+    $ust[$u.Key]=if($u.Sub){if((Safe-Test $u.Acts[0]) -eq $true){'Applied'}else{'Not applied'}}else{'Applied'}}
+   else{$ust[$u.Key]='N/A'}
+   continue}
+  $ust[$u.Key]=if($u.Sub){$r0=Safe-Test $u.Acts[0];if($r0 -eq $true -and (Act-Absent $u.Acts[0])){'Not present'}elseif($r0 -eq $true){'Applied'}else{'Not applied'}}else{$stat[$u.TweakName]}}
  $sync.Msg='Checking hardware and drivers...';$sys=@();try{$sys=Get-SysCheck}catch{}   # plain assignment: Get-SysCheck returns the array as ONE object (,$out)
- $sync.Result=@{Ok=$true;Error='';Stat=$stat;Ust=$ust;ActSt=$ast;Sys=$sys}
-}catch{$sync.Result=@{Ok=$false;Error="$($_.Exception.Message)";Stat=@{};Ust=@{};ActSt=@{}}}
+ $sync.Result=@{Ok=$true;Error='';Stat=$stat;Ust=$ust;ActSt=$ast;Sys=$sys;Orph=$orph}
+}catch{$sync.Result=@{Ok=$false;Error="$($_.Exception.Message)";Stat=@{};Ust=@{};ActSt=@{};Orph=@{}}}
 '@
 $APPLYCODE=@'
 # Input: $items (plain data), $dry, $rp. Output: $sync.Result = plain hashtable with the verified outcome of every item.
@@ -1020,10 +1240,15 @@ $tot=@($items).Count;$n=0
 if($rp){$sync.Msg='Creating restore point...';Log 'Creating restore point...'
  $rpk='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore'
  $rpo=(Get-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue).SystemRestorePointCreationFrequency
+ # Is System Protection already on for the Windows drive? (SPP\Clients lists the protected volumes as "...(C%3A)")
+ $spc=[string](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SPP\Clients' -ErrorAction SilentlyContinue).'{09F7EDC5-294E-4180-AF6A-FB0E6A0E9513}'
+ $spOn=$spc -match [regex]::Escape("($($env:SystemDrive[0])%3A)")
  try{New-ItemProperty $rpk SystemRestorePointCreationFrequency -Value 0 -PropertyType DWord -Force|Out-Null
-     Enable-ComputerRestore -Drive "$env:SystemDrive\";Checkpoint-Computer -Description 'DebloatHub' -RestorePointType MODIFY_SETTINGS}
+     if(-not $spOn){Enable-ComputerRestore -Drive "$env:SystemDrive\";Log "   System Protection was off for $env:SystemDrive and has been turned ON so a restore point can be made. It keeps using some disk space for restore points; you can turn it off again in System Properties > System Protection."}
+     Checkpoint-Computer -Description 'DebloatHub' -RestorePointType MODIFY_SETTINGS}
  catch{$res.RpFailed=$true;Log "   ! restore point failed: $($_.Exception.Message)"}
  finally{if($null -eq $rpo){Remove-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue}else{Set-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -Value $rpo}}}
+if($res.RpFailed){Log 'Nothing was changed, because the restore point you asked for could not be created.';$items=@()}   # never apply without the safety net the user asked for
 foreach($it in $items){$n++;$sync.Msg="Working $n of ${tot}: $($it.Label)";Log $it.Label
  $bad=@();$did=0
  foreach($a in $it.Acts){Log "   $(Show-Act $a)";if($dry){continue}
@@ -1041,6 +1266,7 @@ foreach($it in $items){$n++;$sync.Msg="Working $n of ${tot}: $($it.Label)";Log $
  if($dry){continue}
  if($bad.Count){$res.Failed+="$($it.Label)`n      $($bad -join "`n      ")"}elseif($did){$res.Done++}else{$res.Skipped++}}
 if($dry){Log 'Dry run finished - nothing was changed.'}
+elseif($res.RpFailed){}
 else{Log "Finished: $($res.Done) item(s) changed and verified, $($res.Skipped) already in the requested state, $($res.Failed.Count) failed."
  foreach($f in $res.Failed){Log "   FAILED: $f"}}
 $sync.Result=$res
@@ -1058,36 +1284,56 @@ function Apply-ScanResult($r){
     $r1=New-Object Windows.Documents.Run "$mk  $($i.L): ";$r1.Foreground=$bc.ConvertFromString($col);$r1.FontWeight=[Windows.FontWeights]::SemiBold
     $r2=New-Object Windows.Documents.Run ([string]$i.T);$r2.Foreground=$bc.ConvertFromString('#C8C8C8');[void]$tb.Inlines.Add($r1);[void]$tb.Inlines.Add($r2);[void]$script:sysPanel.Children.Add($tb)}}
   $script:sysTips=@(@($r.Sys)|Where-Object{$_ -and $_.S -eq 'tip'}|ForEach-Object{"$($_.L): $($_.T)"})
-  $c=@{'Applied'=0;'Partial'=0;'Not applied'=0;'Unknown'=0;'N/A'=0}
+  $c=@{'Applied'=0;'Partial'=0;'Not applied'=0;'Unknown'=0;'N/A'=0;'Leftover'=0;'Not present'=0};$script:orph=if($r.Orph){$r.Orph}else{@{}}
   foreach($t in $db){$st=$r.Stat[$t.Name];$stat[$t.Name]=$st;if($st){Set-Status $t $(if($st -eq 'Applied' -and -not(Undoable $t)){'Applied-perm'}else{$st});$c[$st]++}}
   foreach($u in $units){$st=$r.Ust[$u.Key];$ust[$u.Key]=$st
    $fit=[bool](Fits $u.T);$lock=($st -eq 'Applied') -and -not(Can-Undo $u)       # removed apps / run-once results cannot be undone: show them ON but locked, never a switch that pretends to undo
-   $u.Box.IsEnabled=($fit -and -not $lock)
-   if($fit){$u.Box.IsChecked=($st -eq 'Applied')}}
+   $orU=[bool]$script:orph[$u.Key] -and $st -eq 'Applied' -and (Can-Undo $u)       # leftover from the other Windows version: can only be switched off
+   $u.Box.IsEnabled=($fit -and -not $lock -and $st -ne 'Not present') -or $orU
+   if($fit -or $orU){$u.Box.IsChecked=($st -eq 'Applied')}}
   Sync-Masters
-  for($k=0;$k -lt $secs.Count;$k++){$it=@($db|Where-Object{$_.Sec -eq $secs[$k] -and (Fits $_)});$on=@($it|Where-Object{$stat[$_.Name] -eq 'Applied'}).Count;$secCnt[$k].Text="$on of $($it.Count) on"}
+  for($k=0;$k -lt $secs.Count;$k++){$it=@($db|Where-Object{$_.Sec -eq $secs[$k] -and (Fits $_) -and $stat[$_.Name] -ne 'Not present'});$on=@($it|Where-Object{$stat[$_.Name] -eq 'Applied'}).Count;$secCnt[$k].Text="$on of $($it.Count) on"}
   $vk=[array]::IndexOf($secs,$s20);if($vk -ge 0){$cur='Custom'
    foreach($pn in @(,@('Maximize looks',@()),@('Recommended',$vfxRec),@('Maximize performance',$vfxAll))){$ok=$true
     foreach($vn in $vfxAll){if(($stat[$vn] -eq 'Applied') -ne ($pn[1] -contains $vn)){$ok=$false;break}}
     if($ok){$cur=$pn[0];break}}
    $secCnt[$vk].Text+=" | current: $cur"}
   Update-Bar;Update-Simple
-  $sum.Text="Scan result`n$($c['Applied']) applied | $($c['Partial']) partial | $($c['Not applied']) not applied | $($c['Unknown']) one-time | $($c['N/A']) n/a";Log ($sum.Text -replace "`n",': ')}
+  $sum.Text="Scan result`n$($c['Applied']) applied | $($c['Partial']) partial | $($c['Not applied']) not applied | $($c['Unknown']) one-time | $($c['Not present']) not on this PC | $($c['N/A']) n/a$(if($c['Leftover']){" | $($c['Leftover']) left over"})";Log ($sum.Text -replace "`n",': ')
+  if($c['Leftover']){Log "! $($c['Leftover']) tweak(s) applied for the other Windows version are still on this PC (purple 'Left over' badge). Switch them off and press Apply to undo them."}}
 function Show-ApplyResult($r){
  if(-not $r){Log '! the apply job returned no result - the switches now show the real system state';return}
  if($r.Dry){return}
  $bad=@($r.Failed)
- if($bad.Count){[void][Windows.MessageBox]::Show("$($bad.Count) item(s) could not be fully applied or reverted:`n`n"+(($bad|ForEach-Object{" - $_"}) -join "`n")+"`n`nThese were NOT reported as done. The switches now show the real system state; see the log for details.",'DebloatHub','OK','Warning')}
+ if($bad.Count -and $Headless){Log "! $($bad.Count) item(s) could not be fully applied or reverted (listed above)."}
+ elseif($bad.Count){[void][Windows.MessageBox]::Show("$($bad.Count) item(s) could not be fully applied or reverted:`n`n"+(($bad|ForEach-Object{" - $_"}) -join "`n")+"`n`nThese were NOT reported as done. The switches now show the real system state; see the log for details.",'DebloatHub','OK','Warning')}
  elseif($r.Done -gt 0){Log 'All requested changes were verified on the system. Sign out or reboot for everything to take effect.'}
  if($r.Done -gt 0){$script:needReboot=$true}
- if($r.RpFailed){Log '! No restore point was created (see the message above).'}}
+ if($r.RpFailed){$m='No restore point could be created, so DebloatHub changed nothing (see the log for the reason).'+"`n`n"+'To continue without one, turn off "Restore point first" (Advanced) or "Create a restore point first" (Simple view) and try again.'
+  Log "! $($m -replace "`n",' ')";if(-not $Headless){[void][Windows.MessageBox]::Show($m,'DebloatHub','OK','Warning')}}}
 function Show-EditionNote{try{$ed=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop).EditionID
  if($ed -notmatch 'Enterprise|Education|Server'){Log "Windows edition: $ed. This edition cannot turn Windows diagnostic data fully off; 'Disable telemetry & diagnostic services' sets the lowest level it allows (Required)."}}catch{}}
 function Warn-OtherUser{
  if($UserDetectErr){Log "! Could not identify the signed-in user ($UserDetectErr). Per-user switches use THIS account's profile."}
  if($OtherUser){Log "! DebloatHub runs under a different account than the signed-in user. Per-user switches are read and changed in the signed-in user's profile (SID $UserSid), not in this administrator account. Visual-effect switches are unavailable in this mode because Windows saves them for the account that changes them."}}
+function Save-WindowPng($file){                  # renders the window content to a PNG (works without a visible desktop: software rendering)
+ $w.UpdateLayout();$el=$w.Content;$wd=[int]$el.ActualWidth;$ht=[int]$el.ActualHeight
+ $dv=New-Object Windows.Media.DrawingVisual;$dc=$dv.RenderOpen()
+ $dc.DrawRectangle($w.Background,$null,(New-Object Windows.Rect 0,0,$wd,$ht));$dc.DrawRectangle((New-Object Windows.Media.VisualBrush $el),$null,(New-Object Windows.Rect 0,0,$wd,$ht));$dc.Close()
+ $rtb=New-Object Windows.Media.Imaging.RenderTargetBitmap($wd,$ht,96,96,[Windows.Media.PixelFormats]::Pbgra32);$rtb.Render($dv)
+ $enc=New-Object Windows.Media.Imaging.PngBitmapEncoder;$enc.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($rtb))
+ $fs=[IO.File]::Create($file);try{$enc.Save($fs)}finally{$fs.Close()};Log "Screenshot saved: $file"}
+function Start-Screenshots{                      # Advanced view first, then Simple view, then close
+ if(-not(Test-Path -LiteralPath $Screenshot)){New-Item $Screenshot -ItemType Directory -Force|Out-Null}
+ $script:shotStep=0;$t=New-Object Windows.Threading.DispatcherTimer;$t.Interval=[TimeSpan]::FromMilliseconds(1500)
+ $t.Add_Tick({param($s,$e) try{switch($script:shotStep){
+   0{Show-View 'advanced'}
+   1{Save-WindowPng (Join-Path $Screenshot 'screenshot.png');Show-View 'simple'}
+   2{Save-WindowPng (Join-Path $Screenshot 'screenshot-simple.png');$s.Stop();$w.Close()}}}catch{Log "! screenshot failed: $($_.Exception.Message)";$s.Stop();$w.Close()};$script:shotStep++})
+ $t.Start()}
 function Scan-Done($r){
- $script:scanned=$true
+ $first=-not $script:scanned;$script:scanned=$true
+ if($first -and $Screenshot){Start-Screenshots}
  try{
   if(-not $r){Log '! scan returned no result';return}
   if(-not $r.Ok){Log "! background scan failed: $($r.Error)";return}
@@ -1271,7 +1517,8 @@ foreach($sec in $secs){
    if($script:busy){return}
    if([Windows.MessageBox]::Show("Switch the Background Services section to $(if($want){'Strict (Disabled)'}else{'Manual'}) mode?`n`nDebloatHub restarts to rebuild the switches. Changes you have not applied yet are lost. Services you already changed keep their current state (a Disabled service still counts as switched on in Manual mode; to make it Manual, switch it off, Apply, then on again). The original start type stays recorded for undo.",'DebloatHub','YesNo','Question') -ne 'Yes'){return}
    try{if(-not(Test-Path 'HKCU:\SOFTWARE\DebloatHub')){New-Item 'HKCU:\SOFTWARE\DebloatHub' -Force|Out-Null};New-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name ServiceMode -Value $(if($want){'Strict'}else{'Manual'}) -PropertyType String -Force|Out-Null}catch{Log "! could not save the mode: $($_.Exception.Message)";return}
-   Start-Process powershell -WindowStyle $(if($ShowConsole){'Normal'}else{'Hidden'}) -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$MyPath`" -Elevated$(if($ShowConsole){' -ShowConsole'})";$w.Close()})
+   try{$script:Mutex.ReleaseMutex()}catch{}                                    # let the new copy start (one instance at a time)
+   Start-Process $PSExe -WindowStyle $(if($ShowConsole){'Normal'}else{'Hidden'}) -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$MyPath`" -Elevated$(if($ShowConsole){' -ShowConsole'})";$w.Close()})
   [void]$mp.Children.Add($mc)
   $md=New-Object Windows.Controls.TextBlock;$md.TextWrapping='Wrap';$md.FontSize=11;$md.Foreground=$bc.ConvertFromString('#9A9A9A');$md.Margin=[Windows.Thickness]::new(56,2,0,0)
   $md.Text=$(if($SvcStrict){'Strict mode: switched-on services are Disabled and never start, even when an app asks for them. Features that need them stop working.'}else{'Manual mode: switched-on services stop starting at boot, but Windows still starts them when an app or feature asks. Nothing crashes; they just stop running all the time. Services that already work this way are not listed.'})
@@ -1309,7 +1556,7 @@ foreach($sec in $secs){
   $m1=New-Object Windows.Controls.MenuItem;$m1.Header='Revert the applied parts now';$m1.Tag=$t;$m1.Add_Click({param($s,$e) Revert-Partial $s.Tag})
   $m2=New-Object Windows.Controls.MenuItem;$m2.Header='Complete this tweak now (apply the missing parts)';$m2.Tag=$t;$m2.Add_Click({param($s,$e) Complete-Partial $s.Tag})
   [void]$cm.Items.Add($m1);[void]$cm.Items.Add($m2)
-  $cm.Add_Opened({param($s,$e) $tw=$s.Items[0].Tag;$st=$stat[$tw.Name];$s.Items[0].IsEnabled=(-not $script:busy) -and ($st -in 'Partial','Applied','Applied-perm') -and (Can-Undo $tw);$s.Items[1].IsEnabled=(-not $script:busy) -and ($st -eq 'Partial')})
+  $cm.Add_Opened({param($s,$e) $tw=$s.Items[0].Tag;$st=$stat[$tw.Name];$s.Items[0].IsEnabled=(-not $script:busy) -and ($st -in 'Partial','Applied','Applied-perm','Leftover') -and (Can-Undo $tw);$s.Items[1].IsEnabled=(-not $script:busy) -and ($st -eq 'Partial')})
   $row.ContextMenu=$cm
   $d=New-Object Windows.Controls.TextBlock;$d.Text=$t.Desc;$d.Foreground=$bc.ConvertFromString('#A0A0A0');$d.FontSize=12;$d.TextWrapping='Wrap';$d.Margin=[Windows.Thickness]::new(56,3,0,0)
   [void]$inner.Children.Add($top);[void]$inner.Children.Add($d)
@@ -1347,11 +1594,17 @@ function Refresh-View{$q=$txt.Text.Trim();$i=$nav.SelectedIndex
  for($k=0;$k -lt $secs.Count;$k++){$n=0
   foreach($r in $rowsBy[$k]){$m=(-not $q) -or (([string]$r.Tag).IndexOf($q,[StringComparison]::OrdinalIgnoreCase) -ge 0);$r.Visibility=if($m){'Visible'}else{'Collapsed'};if($m){$n++}}
   $cards[$k].Visibility=if(($i -le 0 -or ($i-1) -eq $k) -and $n -gt 0){'Visible'}else{'Collapsed'}}}
-function Pick($tag){if($script:busy){return};$n=0   # presets only ADD: switches that are already applied stay on
+function Pick($tag){if($script:busy){return};$n=0;$held=@()   # presets only ADD: switches that are already applied stay on
  foreach($u in $units){$t=$u.T;$ap=($ust[$u.Key] -eq 'Applied')
+  if(-not $u.Box.IsEnabled){continue}                                           # locked / not on this PC / not available: keep what the scan shows
   $want=if($tag -eq 'recommended'){Is-Rec $u}else{$tag -and (($t.Prof -split ',') -contains $tag)}
-  $u.Box.IsChecked=[bool]((Fits $t) -and ($ap -or $want));if((Fits $t) -and $want -and -not $ap){$n++}}
- Sync-Masters;Update-Bar;if($tag){Log "Preset '$tag': $n switch(es) turned on. Review them (blue bar), then press Apply."}}
+  if($want -and $tag -ne 'recommended'){   # the Privacy and Gaming presets never pre-select Advanced (security-lowering) or irreversible items
+   $why=if($t.Risk -eq 'Advanced'){'Advanced'}elseif(-not(Can-Undo $u)){'cannot be undone'}elseif($HasBattery -and $t.Name -eq 'Ultimate Performance power plan'){'not for laptops on battery'}
+   if($why){$want=$false;if(-not $ap){$held+="$($u.Key -replace '\|',' > ') ($why)"}}}
+  $u.Box.IsChecked=[bool]($ap -or ((Fits $t) -and $want));if((Fits $t) -and $want -and -not $ap){$n++}}
+ Sync-Masters;Update-Bar
+ if($tag){Log "Preset '$tag': $n switch(es) turned on. Review them (blue bar), then press Apply."
+  foreach($h in @($held|Select-Object -Unique)){Log "   left for you to decide: $h"}}}
 $cfg=Join-Path $(if($UserDesktop -and (Test-Path -LiteralPath $UserDesktop)){$UserDesktop}else{$UserProfile}) 'DebloatHub-selection.json'
 $nav.Add_SelectionChanged({Refresh-View});$txt.Add_TextChanged({Refresh-View});$nav.SelectedIndex=0
 $bScan.Add_Click({Scan})
@@ -1359,8 +1612,13 @@ $pSafe.Add_Click({Pick 'recommended'});$pPriv.Add_Click({Pick 'privacy'});$pGame
 $bApply.Add_Click({Run})
 $chkPC.Add_Click({$on=[bool]$chkPC.IsChecked;foreach($x in $pcBlocks){$x.Visibility=$(if($on){'Visible'}else{'Collapsed'})}
  try{if(-not(Test-Path 'HKCU:\SOFTWARE\DebloatHub')){New-Item 'HKCU:\SOFTWARE\DebloatHub' -Force|Out-Null};New-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name ShowProsCons -Value ([int]$on) -PropertyType DWord -Force|Out-Null}catch{}})
-$bExp.Add_Click({try{ConvertTo-Json -InputObject @($units|Where-Object{$_.Box.IsChecked}|ForEach-Object{$_.Key})|Set-Content -LiteralPath $cfg -Encoding UTF8;Log "Saved switches (ON) to $cfg"}catch{Log "! could not save the selection: $($_.Exception.Message)"}})
-$bImp.Add_Click({try{if(Test-Path -LiteralPath $cfg){$raw=Get-Content -LiteralPath $cfg -Raw;$n=@(if("$raw".Trim()){($raw|ConvertFrom-Json)|ForEach-Object{$_}});foreach($u in $units){if($u.Box.IsEnabled){$u.Box.IsChecked=[bool]($n -contains $u.Key)}};Sync-Masters;Update-Bar;Log "Loaded $cfg"}else{Log "No saved selection at $cfg"}}catch{Log "! could not load the selection: $($_.Exception.Message)"}})
+function Save-Selection($path){try{ConvertTo-Json -InputObject @($units|Where-Object{$_.Box.IsChecked}|ForEach-Object{$_.Key})|Set-Content -LiteralPath $path -Encoding UTF8;Log "Saved switches (ON) to $path"}catch{Log "! could not save the selection: $($_.Exception.Message)"}}
+function Load-Selection($path){   # switches in the file = ON, every other switch = OFF (so tweaks not in the file are reverted when you Apply)
+ try{$raw=Get-Content -LiteralPath $path -Raw -ErrorAction Stop;$n=@(if("$raw".Trim()){($raw|ConvertFrom-Json)|ForEach-Object{$_}})
+  foreach($u in $units){if($u.Box.IsEnabled -and (Fits $u.T)){$u.Box.IsChecked=[bool]($n -contains $u.Key)}};Sync-Masters;Update-Bar;Log "Loaded $path";$true}
+ catch{Log "! could not load the selection: $($_.Exception.Message)";$false}}
+$bExp.Add_Click({$d=New-Object Microsoft.Win32.SaveFileDialog;$d.Title='Save selection';$d.Filter='DebloatHub selection (*.json)|*.json|All files (*.*)|*.*';$d.FileName=Split-Path $cfg -Leaf;$d.InitialDirectory=Split-Path $cfg;if($d.ShowDialog($w)){Save-Selection $d.FileName}})
+$bImp.Add_Click({$d=New-Object Microsoft.Win32.OpenFileDialog;$d.Title='Load selection';$d.Filter='DebloatHub selection (*.json)|*.json|All files (*.*)|*.*';$d.InitialDirectory=Split-Path $cfg;if($d.ShowDialog($w)){[void](Load-Selection $d.FileName)}})
 Add-Type -Namespace DH -Name Win -MemberDefinition @'
 [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int c);
@@ -1378,11 +1636,7 @@ $timer.Add_Tick({$j=$script:job;if(-not $j){return}
 # ---------- Simple view: three buttons on top of the same engine (presets -> switches -> Run) ----------
 $script:needReboot=$false;$script:scanned=$false
 function In-Set($u,$what){(Fits $u.T) -and $u.Box.IsEnabled -and $(if($what -eq 'game'){(Is-Rec $u) -or ($SIMPLE_GAMING -contains $u.T.Name) -or ($SIMPLE_GAMING -contains $u.Key)}else{Is-Rec $u})}
-function DH-Changed($u){                          # did DebloatHub itself change this switch? (a recorded original or a command marker exists)
- foreach($a in $u.Acts){if(-not(Act-Revertible $a)){continue}
-  if($a.K -eq 'Cmd'){$id=Cmd-Id $a;if((Get-ItemProperty 'HKLM:\SOFTWARE\DebloatHub\Applied' -Name $id -ErrorAction SilentlyContinue).$id){return $true}}
-  elseif(Snap-Read $a){return $true}}
- return $false}
+function DH-Changed($u){Has-Record $u.Acts}         # did DebloatHub itself change this switch? (a recorded original or a command marker exists)
 function Undo-Units{@($units|Where-Object{$_.Box.IsEnabled -and $ust[$_.Key] -eq 'Applied' -and (Can-Undo $_) -and (DH-Changed $_)})}
 function Update-Simple{
  if(-not $simpleView -or $simpleView.Visibility -ne 'Visible'){return}
@@ -1417,7 +1671,34 @@ $bToSimple.Add_Click({Save-UiMode 'Simple';Show-View 'simple'})
 $bRec.Add_Click({Simple-Run 'rec'});$bGame.Add_Click({Simple-Run 'game'});$bUndo.Add_Click({Simple-Run 'undo'})
 $lnkShow.Add_MouseLeftButtonUp({if($script:busy){return};Pick 'recommended';Show-View 'advanced';$nav.SelectedIndex=0})   # the blue bars show every pending change
 $bReboot.Add_Click({if([Windows.MessageBox]::Show('Restart the PC now? Save your work in other apps first.','DebloatHub','YesNo','Question') -eq 'Yes'){Start-Process shutdown.exe -ArgumentList '/r /t 5'}})
+# ---------- Unattended mode: -Preset Debloat|Gaming|Undo or -Selection <file>; same engine, no window ----------
+function Invoke-Headless{
+ $script:HeadlessExit=0
+ Log "DebloatHub v$AppVersion - unattended mode: $(if($Selection){"selection $Selection"}else{"preset $Preset"})$(if($DryRun){' (dry run, nothing is changed)'})"
+ if($LogFile){Log "Log file: $LogFile"}
+ Warn-OtherUser;Show-EditionNote;Log 'Scanning this PC...'
+ $r=Invoke-Sync (New-ScanData) $SCANCODE
+ if(-not $r -or -not $r.Ok){Log "! scan failed: $(if($r){$r.Error})";$script:HeadlessExit=2;return}
+ Apply-ScanResult $r;$script:scanned=$true
+ if($Selection){if(-not(Load-Selection $Selection)){$script:HeadlessExit=2;return}}
+ else{Pick $null
+  switch($Preset){'Undo'{foreach($u in (Undo-Units)){$u.Box.IsChecked=$false}}
+   'Gaming'{foreach($u in $units){if(In-Set $u 'game'){$u.Box.IsChecked=$true}}}
+   default{foreach($u in $units){if(In-Set $u 'rec'){$u.Box.IsChecked=$true}}}}}
+ $p=Pending;$add=@($p[0]);$rem=@($p[1])
+ foreach($bu in @($p[2])){Log "   '$($bu.Key -replace '\|',' > ')' has no undo command - left as is."}
+ if(-not($add.Count+$rem.Count)){Log 'Nothing to change: this PC is already in the requested state.';return}
+ $add=@($add|Where-Object{Can-Undo $_})+@($add|Where-Object{-not(Can-Undo $_)})
+ Log "$($add.Count) change(s) to apply and $($rem.Count) to revert."
+ foreach($n in @($add|ForEach-Object{$_.T.Name}|Select-Object -Unique|Where-Object{$warnBy.ContainsKey($_)})){Log "   note - $($n): $($warnBy[$n])"}
+ $r2=Invoke-Sync @{items=(Build-Items $add $rem);dry=[bool]$DryRun;rp=[bool](-not $DryRun -and -not $NoRestorePoint -and $add.Count)} $APPLYCODE
+ Show-ApplyResult $r2
+ if(-not $r2){$script:HeadlessExit=2}elseif($r2.RpFailed){$script:HeadlessExit=4}elseif(@($r2.Failed).Count){$script:HeadlessExit=1}
+ elseif(-not $DryRun -and $r2.Done){Log 'Done. Sign out or restart the PC for everything to take effect.'}}
+if($Headless){Invoke-Headless;Log "Exit code: $script:HeadlessExit (0 = OK, 1 = some items failed, 2 = error, 4 = no restore point, nothing changed)";exit $script:HeadlessExit}
+
 $startView='choose';try{$um=(Get-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name UiMode -ErrorAction Stop).UiMode;if($um -eq 'Simple'){$startView='simple'}elseif($um -eq 'Advanced'){$startView='advanced'}}catch{}
+if($Screenshot){$startView='simple'}
 Show-View $startView
 $w.Add_Closing({param($s,$e) if($script:busy -and [Windows.MessageBox]::Show('A job is still running. Close anyway?','DebloatHub','YesNo') -ne 'Yes'){$e.Cancel=$true}})
 $w.Add_ContentRendered({if(-not $ShowConsole){try{[void][DH.Win]::ShowWindow([DH.Win]::GetConsoleWindow(),0)}catch{}};Warn-OtherUser;Show-EditionNote;Scan})

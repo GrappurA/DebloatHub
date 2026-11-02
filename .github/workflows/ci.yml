@@ -1,0 +1,63 @@
+name: CI
+
+# Runs on every push and pull request, and before every release (release.yml calls it).
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Unit and consistency tests (Windows PowerShell 5.1)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\Test-DebloatHub.ps1
+
+      - name: Unit and consistency tests (PowerShell 7)
+        shell: pwsh
+        run: pwsh -NoProfile -File tests/Test-DebloatHub.ps1
+
+      - name: PSScriptAnalyzer (errors only)
+        shell: pwsh
+        run: |
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) { Install-Module PSScriptAnalyzer -Force -Scope CurrentUser }
+          $r = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error, ParseError
+          $r | Format-Table -AutoSize | Out-String -Width 300 | Write-Host
+          if ($r) { exit 1 }
+
+      # End-to-end on real Windows: builds the whole tweak database, scans the runner, and plans every preset.
+      # -DryRun changes nothing (no restore point, no registry, service or app changes).
+      - name: Smoke test - unattended dry runs (Debloat, Gaming, Undo)
+        shell: powershell
+        run: |
+          foreach ($p in 'Debloat', 'Gaming', 'Undo') {
+            Write-Host "===== -Preset $p -DryRun ====="
+            powershell -NoProfile -ExecutionPolicy Bypass -File .\DebloatHub.ps1 -Preset $p -DryRun -NoRestorePoint
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error::-Preset $p -DryRun exited with code $LASTEXITCODE"; exit 1 }
+          }
+
+      - name: Render screenshots of the window
+        id: shots
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $job = Start-Job { powershell -NoProfile -ExecutionPolicy Bypass -File "$using:PWD\DebloatHub.ps1" -Screenshot "$using:PWD\shots" }
+          if (-not (Wait-Job $job -Timeout 240)) { Stop-Job $job; Write-Host '::warning::screenshot run timed out' }
+          Receive-Job $job
+          Get-ChildItem shots -ErrorAction SilentlyContinue
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shots/*.png
+          if-no-files-found: ignore

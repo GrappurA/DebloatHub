@@ -2,7 +2,34 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [1.1.0] - 2026-10-29
+## [1.1.0] - 2026-11-02
+
+### Fixed
+- **Driver Store cleanup never worked.** The cleanup plan was wrapped into a single item, so every package name (including in-use ones) was passed to `pnputil` as one argument and the action failed. It now handles each package separately, and no longer uses `pnputil /force`: Windows itself refuses packages that an unplugged device still uses, and those are logged as kept instead of failed.
+- **Cleanups can no longer delete files outside their folder.** Windows PowerShell 5.1's `Remove-Item -Recurse` follows directory junctions, so a junction in the Temp or a browser-cache folder could make the elevated cleanup delete files elsewhere. Temp, browser-cache, crash-dump and Windows Update cache cleanups now remove links without following them.
+- **A failed restore point stops Apply.** Before, DebloatHub logged the failure and carried on. Now nothing is changed and a message explains how to continue without one. If System Protection was off for the Windows drive, the log says that DebloatHub turned it on.
+- **Cloudflare DNS** is set only on physical adapters (Ethernet, Wi-Fi), not on VPN, Hyper-V, WSL or Tailscale adapters. Each adapter's previous DNS (automatic or typed in) is recorded and restored on undo, instead of resetting every adapter to automatic.
+- **Ultimate Performance** undo returns to the power plan that was active before, not always Balanced.
+- **32-bit PowerShell:** started from a 32-bit program, DebloatHub relaunches itself in 64-bit PowerShell. Before, machine-wide policies were written to `WOW6432Node`, where Windows ignores them, and the check read the same wrong place and reported success.
+- **Launcher:** works in folders whose name contains an apostrophe (e.g. `C:\Users\D'Angelo\Downloads`), and shows a message when the administrator prompt is declined instead of closing silently.
+- **Memory compression** now explains that it needs the SysMain service when SysMain is disabled, instead of failing with an MMAgent error.
+- **Leftovers after upgrading Windows 10 to 11:** Windows 10-only tweaks DebloatHub applied (for example the Ndu driver or News and Interests) were greyed out on Windows 11 and could not be undone. They now show a purple *Left over* badge and can be switched off and undone, also with the Simple view's *Undo*.
+- **"Applied" for things that are not installed:** a tweak whose services, tasks or optional keys do not exist on the PC (e.g. NVIDIA telemetry without NVIDIA drivers) showed as *Applied*. It now shows *Not on this PC* and is not counted.
+- **Uninstall OneDrive** and **Empty Recycle Bin** act on the signed-in user even when UAC elevated DebloatHub to another administrator account. The OneDrive uninstall also removes the setup entry that would reinstall OneDrive for new accounts.
+- **Privacy and Gaming presets** no longer pre-select Advanced items (e.g. turning off Memory Integrity) or anything that cannot be undone (e.g. removing Copilot apps). The log lists what was left for you to decide. On laptops, Gaming skips the Ultimate Performance plan.
+- **Developer CLI telemetry variables** are offered only when a developer tool is installed (or the variables already exist), so Recommended no longer adds 14 environment variables to every PC.
+- Only one copy of DebloatHub can run at a time, so two copies cannot overwrite each other's undo records.
+
+### Added
+- **Unattended mode:** `-Preset Debloat|Gaming|Undo` or `-Selection <file>`, with `-DryRun` and `-NoRestorePoint`, and meaningful exit codes.
+- **Log file:** every session is logged to `%ProgramData%\DebloatHub\Logs` (kept 90 days).
+- **Save/Load selection** ask where to save or load the file.
+- **Startup Programs** also lists the startup tasks of Microsoft Store apps (new Teams, Spotify, WhatsApp...).
+- New tweaks: *Start menu: no recommendations or account notifications* (Windows 11), *Disable OneDrive and sync-provider ads in Explorer*, *Classic right-click menu* (Windows 11), *Hide Copilot button on the taskbar*, *Do not install drivers through Windows Update*, *Stop Windows reinstalling Teams*, *Block OneDrive by policy* (part of Uninstall OneDrive), and the Widgets package in *Remove Windows 11 extra apps*.
+- Existing tweaks cover more: telemetry tasks include MareBackup and Device Information; Start/Settings suggestions include Settings suggested content, the post-update welcome experience and the "finish setting up your device" screen; Game DVR is also turned off by machine policy.
+- **Tests and CI:** `tests/Test-DebloatHub.ps1` (syntax, consistency, JSONC editing, driver selection, link-safe cleanup, leftover logic) runs on every push in Windows PowerShell 5.1 and PowerShell 7, with PSScriptAnalyzer and unattended dry runs of every preset on Windows. Releases are only published when CI passes.
+- MIT license, security policy, contribution guide and issue templates.
+
 
 ### Added
 - **Simple view (new start page).** On first start you choose **Simple** or **Advanced**, and can tick *Remember my choice*.

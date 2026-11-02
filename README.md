@@ -12,6 +12,8 @@
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 | 11">
   <img src="https://img.shields.io/badge/PowerShell-5.1-5391FE" alt="PowerShell 5.1">
   <img src="https://img.shields.io/badge/portable-no%20install%20needed-2E7D32" alt="Portable, no install needed">
+  <a href="https://github.com/GrappurA/DebloatHub/actions/workflows/ci.yml"><img src="https://github.com/GrappurA/DebloatHub/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT license"></a>
 </p>
 
 <p align="center"><img src="docs/screenshot.png" alt="DebloatHub main window: sections on the left, tweaks with risk badges, pros and cons, apply bar and log at the bottom" width="100%"></p>
@@ -28,10 +30,13 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 - [How it works](#how-it-works)
 - [Safety](#safety)
 - [ASUS / G-Helper laptops](#asus--g-helper-laptops)
+- [Command line (unattended)](#command-line-unattended)
 - [Adding your own tweaks](#adding-your-own-tweaks)
 - [Files and registry keys DebloatHub uses](#files-and-registry-keys-debloathub-uses)
 - [FAQ](#faq)
+- [Contributing and security](#contributing-and-security)
 - [Credits](#credits)
+- [License](#license)
 - [Disclaimer](#disclaimer)
 
 ---
@@ -40,21 +45,24 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 
 - **System check.** Flags the things no tweak can fix but that matter most: outdated GPU driver, a monitor stuck at 60 Hz, RAM at default speed (XMP/EXPO off) or in single channel, Memory Integrity status.
 - **Simple or Advanced.** Simple is three buttons: *Debloat*, *Debloat + Gaming* and *Undo*, each showing how many changes it makes. Advanced is the full list below with every switch, detail and preset. Switch any time.
-- **120+ tweaks in 11 sections**, plus your own startup programs, which are read from this PC.
-- **Switches show the real state.** On start, DebloatHub scans the PC and every switch shows what is ON right now: *Applied*, *Partial*, *Not applied* or *Not available here*.
+- **130+ tweaks in 12 sections**, plus your own startup programs (Run keys, Startup folders and Microsoft Store app startup tasks), which are read from this PC.
+- **Switches show the real state.** On start, DebloatHub scans the PC and every switch shows what is ON right now: *Applied*, *Partial*, *Not applied*, *Not on this PC* (the service, task or program it changes is not installed) or *Not available here* (other Windows version).
+- **Nothing gets stuck after a Windows upgrade.** A Windows 10-only tweak you applied before upgrading to Windows 11 shows a purple *Left over* badge and can still be switched off and undone.
 - **Choose item by item.** Groups (apps, services, scheduled tasks, Windows features, browser policies) open into one switch per item. You keep the Print Spooler and turn off Fax, or remove Solitaire but keep Calculator.
 - **Pros and cons on screen.** Every tweak shows its pros and cons under the description. Hover the switch for the full card: what it does, do you need it, what it affects, a recommendation and the exact registry/service/task changes.
 - **Real undo.** Before the first change, DebloatHub saves the *original* value, start type, task state or feature state. Switching it off later restores exactly that, not a guessed "default".
 - **Verified apply.** After each change the real system is checked again. Anything that did not take effect is reported as failed, not as done.
 - **Safety net.** Optional restore point before applying, a Dry run mode that only previews, and a confirmation that lists one-time actions and risky items.
 - **Recommended preset.** A curated list of performance and privacy tweaks, marked with a *Recommended* badge. Its rules: every common feature keeps working, and everything can be undone with one click, so it contains no app removals and no one-time cleanups.
-- **Other presets.** *Privacy* and *Gaming* also only move switches; nothing happens until you press Apply. *Reset* returns every switch to the current system state.
+- **Other presets.** *Privacy* and *Gaming* also only move switches; nothing happens until you press Apply. They never pre-select **Advanced** items (such as turning off Memory Integrity) or anything that cannot be undone (app removals); the log lists those so you can decide yourself. On laptops, *Gaming* also skips the Ultimate Performance plan. *Reset* returns every switch to the current system state.
 - **Visual Effects presets.** *Maximize looks*, *Recommended* and *Maximize performance* set the switches; after Apply, the effects change instantly, without a sign-out.
-- **Save and load your selection** as a JSON file to reuse on other PCs.
+- **Save and load your selection** as a JSON file (you choose where) to reuse on other PCs, also unattended from the command line.
+- **Log file.** Everything in the log window is also written to `%ProgramData%\DebloatHub\Logs` (kept 90 days), so you can check later what was changed.
 - **Version aware.** Windows 10-only and Windows 11-only tweaks are shown as "Not available here" on the other version.
 - **Runs in the background.** Scans and applies run off the UI thread, with a live log, so the window stays responsive.
 - **Correct user even after UAC.** If UAC elevates to a different admin account, per-user settings still go to the signed-in user's profile.
 - **No install, no downloads.** One PowerShell script and a launcher. Nothing is fetched from the internet.
+- **Always 64-bit, one copy at a time.** Started from a 32-bit program, it relaunches itself in 64-bit PowerShell (otherwise machine-wide policies would land in the wrong registry view). A second copy refuses to start while one is open.
 
 ## Quick start
 
@@ -66,6 +74,8 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 
 > **"Windows protected your PC"?** Windows shows this for any downloaded script that is not code-signed. Click **More info › Run anyway**. Or before extracting, right-click the zip › **Properties** › tick **Unblock** › OK.
 
+**Check your download (optional).** Every release lists the SHA-256 of its files in `SHA256SUMS.txt`. In PowerShell, in your Downloads folder, run `Get-FileHash DebloatHub.zip` and compare the hash with that file.
+
 **Prefer PowerShell?** Paste this into a PowerShell window. It downloads the script to your Temp folder and starts it, asking for admin rights itself:
 
 ```powershell
@@ -76,7 +86,7 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 
 > Tip: try it in a virtual machine first, and read the cards of anything marked **Moderate** or **Advanced**.
 
-To troubleshoot, run `DebloatHub.ps1 -ShowConsole` to keep the console visible. Startup errors are written to `%TEMP%\DebloatHub-error.log`.
+To troubleshoot, run `DebloatHub.ps1 -ShowConsole` to keep the console visible. Startup errors are written to `%TEMP%\DebloatHub-error.log`, and the full log of every session to `%ProgramData%\DebloatHub\Logs`.
 
 All versions and their changes are listed on the [Releases page](https://github.com/GrappurA/DebloatHub/releases) and in [CHANGELOG.md](CHANGELOG.md).
 
@@ -85,16 +95,16 @@ All versions and their changes are listed on the [Releases page](https://github.
 | Section | What is inside |
 |---|---|
 | **Privacy & Telemetry** | Diagnostic data level, telemetry services and scheduled tasks, app-compatibility inventory, advertising ID, activity history, tailored experiences, web results in Start, location, error reporting, CEIP, feedback prompts, NVIDIA and Office telemetry, camera/mic defaults |
-| **AI & Copilot** | Recall (policy and optional feature), Copilot, Click to Do, AI Fabric service, Copilot apps |
-| **Apps & Bloatware** | Microsoft consumer apps, Teams/Cortana, optional extras, Xbox apps, third-party promo apps and games, 3D/Mixed Reality, legacy apps, OneDrive, OEM vendor apps (one switch per package) |
+| **AI & Copilot** | Recall (policy and optional feature), Copilot, Copilot taskbar button, Click to Do, AI Fabric service, Copilot apps |
+| **Apps & Bloatware** | Microsoft consumer apps, Teams/Cortana, optional extras, Xbox apps, third-party promo apps and games, 3D/Mixed Reality, legacy apps, Windows 11 extras (incl. the Widgets package), OneDrive (uninstall plus an optional policy that keeps it from coming back), Teams auto-reinstall, OEM vendor apps (one switch per package) |
 | **Browsers & Dev Tools** | Shown only for programs you have installed. Edge (startup boost, background mode, sidebar, shopping, Rewards/MSN feed, sleeping tabs, telemetry, hardening), Chrome, Firefox (telemetry, sponsored content, background updates), VS Code `settings.json` (edited in place, comments kept), Visual Studio, telemetry opt-outs for 14 developer CLIs |
-| **Start, Taskbar & Explorer** | Start/lock-screen ads and silent installs, Widgets, News and Interests, taskbar alignment and buttons, search box, search highlights, End Task, file extensions, hidden files, Explorer defaults |
-| **Performance & Gaming** | Fast Startup, hibernation, Ultimate Performance plan, Game DVR, Game Bar, mouse acceleration, background apps, Xbox cloud-save task, NVIDIA services while the dGPU is off (G-Helper Eco) |
+| **Start, Taskbar & Explorer** | Start/lock-screen ads and silent installs, Windows 11 Start recommendations and account notifications, OneDrive ads in Explorer, classic right-click menu, Widgets, News and Interests, taskbar alignment and buttons, search box, search highlights, End Task, file extensions, hidden files, Explorer defaults |
+| **Performance & Gaming** | System check (GPU driver, refresh rate, RAM speed and channels), Game Mode, windowed-game optimizations, GPU scheduling, Memory Integrity, Fast Startup, hibernation, Ultimate Performance plan (undo returns to your previous plan), Game DVR, Game Bar, mouse acceleration, background apps, Xbox cloud-save task, NVIDIA services while the dGPU is off (G-Helper Eco) |
 | **Background Services** | **Manual mode** (default): services no longer start at boot, but Windows still starts them when something asks, so nothing breaks. **Strict mode**: Disabled, never starts. Per-service switches grouped by feature, including third-party updaters (Google, Brave, Adobe, Dropbox, HP, Dell, AMD): printing & scanning, Xbox, Phone Link, Windows Hello biometrics, Bluetooth, network sharing, Remote Desktop, IP Helper, diagnostics, ASUS services, SysMain, Search indexing, start-on-demand services, and fewer `svchost.exe` processes |
 | **Memory (RAM)** | Ndu driver (non-paged pool leak), memory compression, empty standby memory |
 | **Visual Effects** | All 17 *Performance Options* effects as separate switches, plus transparency, with three presets |
-| **Startup Programs** | Every Run-key and Startup-folder entry on this PC, disabled the same way as Task Manager > Startup apps |
-| **System, Security & Network** | Delivery Optimization, Storage Sense, update restarts, BitLocker auto-encryption, Cloudflare DNS, AutoPlay, LLMNR, Remote Assistance, Windows Script Host, clipboard history, online speech, legacy Windows features (SMB 1.0, PowerShell 2.0...) |
+| **Startup Programs** | Every Run-key and Startup-folder entry on this PC, plus the startup tasks of Microsoft Store apps (new Teams, Spotify, WhatsApp...), disabled the same way as Task Manager > Startup apps |
+| **System, Security & Network** | Delivery Optimization, Storage Sense, update restarts, driver updates through Windows Update, BitLocker auto-encryption, Cloudflare DNS (physical adapters only; each adapter's own DNS is restored on undo), AutoPlay, LLMNR, Remote Assistance, Windows Script Host, clipboard history, online speech, legacy Windows features (SMB 1.0, PowerShell 2.0...) |
 | **Maintenance & Repair** | One-time actions: SFC, DISM, component cleanup, old driver packages, temp/browser/thumbnail/crash-dump/Delivery Optimization cleanup, Windows Update reset, network reset, DNS flush, SSD TRIM |
 
 Every tweak carries a risk badge:
@@ -130,14 +140,15 @@ Tweaks are defined as data, not code. Each one is a list of *actions*:
 | `Startup` | Disable a startup entry via `StartupApproved` (same as Task Manager) | Original entry bytes |
 | `Spi` | Change a visual effect live (`SystemParametersInfo`) | Original value |
 | `Json` | Change one key in a JSON/JSONC file in place (comments, order and trailing commas kept; `.debloathub.bak` backup) | Original value or key removed |
-| `Cmd` | Run a command (one-time actions, or with an undo command and a detector) | Undo command, if defined |
+| `Cmd` | Run a command (one-time actions, or with an undo command and a detector) | Undo command, if defined (DNS and power plan record and restore what was there before) |
 
 ## Safety
 
-- **Restore point** before applying (on by default). DebloatHub temporarily lifts Windows' one-per-24-hours limit so the point is really created.
+- **Restore point** before applying (on by default). DebloatHub temporarily lifts Windows' one-per-24-hours limit so the point is really created. **If the restore point cannot be created, nothing is changed** and you are told why; turn the option off to continue without one. If System Protection was off for the Windows drive, DebloatHub turns it on (a restore point needs it) and says so in the log.
 - **Dry run** logs every action without changing anything.
 - **Confirmation dialog** lists one-time actions that cannot be undone, items with special warnings, and reverts that have no recorded original.
-- **Fail-closed actions.** For example, the Driver Store cleanup deletes nothing if it cannot read which drivers are in use. It never touches boot-critical, printer or in-use drivers.
+- **Fail-closed actions.** For example, the Driver Store cleanup deletes nothing if it cannot read which drivers are in use. It never touches boot-critical, printer or in-use drivers, and it lets Windows refuse packages that an unplugged device still uses (no `/force`).
+- **Link-safe cleanups.** Temp, browser-cache, crash-dump and update-cache cleanups never follow junctions or symbolic links, so a link inside a user folder can never make the elevated cleanup delete files somewhere else.
 - **No hidden downloads or third-party binaries.** Standby-memory flushing uses the Windows API directly instead of RAMMap.
 - Things that **cannot be undone automatically** are labelled *No undo*. After applying they show as *Applied – cannot be undone* and are locked: removed apps, cleanups, repairs.
 
@@ -148,6 +159,24 @@ Tweaks are defined as data, not code. Each one is a list of *actions*:
   - Keep the G-Helper option on, so the services come back when you switch to Standard.
   - It only appears on PCs with NVIDIA drivers.
 - **ASUS services (replaced by G-Helper).** The same service list and settings as G-Helper's *Extra › Stop* button, but with one switch per service and full undo. The touchpad service is never touched.
+
+## Command line (unattended)
+
+The same engine runs without a window, for example to set up several PCs the same way. Run from an **elevated** PowerShell window (so the exit code reaches your script):
+
+```powershell
+.\DebloatHub.ps1 -Preset Debloat                 # same as the Simple view's Debloat button
+.\DebloatHub.ps1 -Preset Gaming                  # Debloat + Gaming
+.\DebloatHub.ps1 -Preset Undo                    # put back everything DebloatHub changed
+.\DebloatHub.ps1 -Selection .\my-selection.json  # a file saved with "Save selection"
+```
+
+| Option | Meaning |
+|---|---|
+| `-DryRun` | Only list what would change |
+| `-NoRestorePoint` | Skip the restore point |
+
+With `-Selection`, switches in the file are applied and **every other switch is reverted**, exactly like *Load selection* + *Apply* in the window. Exit codes: `0` OK, `1` some items failed, `2` error, `3` another copy is running, `4` no restore point could be created (nothing was changed). The log is printed and also saved to `%ProgramData%\DebloatHub\Logs`.
 
 ## Adding your own tweaks
 
@@ -171,9 +200,11 @@ Action constructors:
 | `fTask` | `\Path\TaskName` |
 | `fFeat` | feature name |
 | `fJson` | file, key, value, fallback undo |
-| `fCmd` | command, [undo command], [detector expression that returns `$true` when applied] |
+| `fCmd` | command, [undo command], [detector expression that returns `$true` when applied], [label] |
 
 A tweak made only of apps, tasks, services, features or JSON keys automatically gets one switch per item.
+
+Run the tests before opening a pull request: `powershell -File tests\Test-DebloatHub.ps1`. They check the syntax, that every Recommended entry and every engine function exists, the JSONC editor, the Driver Store selection and the link-safe cleanup. CI runs them on every push, together with unattended dry runs of every preset on a real Windows machine.
 
 ## Files and registry keys DebloatHub uses
 
@@ -181,17 +212,20 @@ A tweak made only of apps, tasks, services, features or JSON keys automatically 
 |---|---|
 | `HKLM\SOFTWARE\DebloatHub\Snapshots` | Original states recorded before the first change (used by undo) |
 | `HKLM\SOFTWARE\DebloatHub\Applied` | Markers for reversible commands without their own detector |
-| `HKCU\SOFTWARE\DebloatHub` | UI preferences (e.g. show pros & cons) |
+| `HKLM\SOFTWARE\DebloatHub\Dns` | Each network adapter's DNS servers before *Use Cloudflare DNS* |
+| `HKLM\SOFTWARE\DebloatHub\Power` | The power plan that was active before *Ultimate Performance* |
+| `HKCU\SOFTWARE\DebloatHub` | UI preferences (pros & cons, Simple/Advanced, service mode) |
+| `%ProgramData%\DebloatHub\Logs` | Log of every session (kept 90 days) |
 | Task Scheduler › `DebloatHub` | Tasks created by tweaks (only when you enable them) |
 | `<file>.debloathub.bak` | First-time backup of any JSON settings file it edits |
-| `Desktop\DebloatHub-selection.json` | Your saved selection |
+| `DebloatHub-selection.json` | Your saved selection (Desktop by default; you choose the place) |
 | `%TEMP%\DebloatHub-error.log` | Startup error details |
 
 To remove DebloatHub completely:
 
 1. Switch off everything you want restored and press Apply.
 2. Delete the script.
-3. Optionally delete `HKLM\SOFTWARE\DebloatHub`. After that, undo can only use Windows' defaults.
+3. Optionally delete `HKLM\SOFTWARE\DebloatHub` and `%ProgramData%\DebloatHub`. After that, undo can only use Windows' defaults.
 
 ## FAQ
 
@@ -206,6 +240,10 @@ Some tweaks reduce background work: fewer services, startup apps and telemetry s
 
 **Can I use it together with other debloat tools?**
 Yes. Settings changed by other tools are detected as applied. Undo then uses Windows' documented defaults, because DebloatHub never saw the original value, and it tells you so before reverting.
+
+## Contributing and security
+
+Bug reports and new tweaks are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Please report security problems privately as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
 ## Credits
 
@@ -222,6 +260,10 @@ DebloatHub collects and re-implements ideas and settings from these projects. Ea
 - [ios12checker/Windows-Maintenance-Tool](https://github.com/ios12checker/Windows-Maintenance-Tool)
 - [memstechtips/Winhance](https://github.com/memstechtips/Winhance) (feature and UI reference)
 - [seerge/g-helper](https://github.com/seerge/g-helper) (ASUS service list and Eco-mode behaviour)
+
+## License
+
+[MIT](LICENSE). The credited projects are the source of the *ideas and settings*; DebloatHub's code is its own.
 
 ## Disclaimer
 

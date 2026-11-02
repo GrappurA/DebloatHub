@@ -1,0 +1,33 @@
+name: Tweak request
+description: Suggest a new tweak or a change to an existing one
+labels: [tweak]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Tweak name
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Exact change
+      description: Registry path and value, service name and start type, scheduled task path, or command
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: Microsoft documentation, an ADMX policy, or a well-known tool that has it
+  - type: textarea
+    id: cons
+    attributes:
+      label: What can it break?
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Windows version
+      options: [Windows 10 and 11, Windows 11 only, Windows 10 only]
