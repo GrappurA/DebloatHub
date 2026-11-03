@@ -995,7 +995,8 @@ function Reset-WUCache{
 # = connected adapters with an IPv4 default gateway, which is also the Hyper-V vEthernet of an external switch (the physical card under it has no IP at all).
 # Not touched: VPN / tunnel adapters, and adapters without a gateway (WSL, Hyper-V Default Switch, host-only networks).
 function Get-DnsAdapters{
- @(Get-NetIPConfiguration -ErrorAction SilentlyContinue|Where-Object{$_.IPv4DefaultGateway -and $_.NetAdapter -and "$($_.NetAdapter.Status)" -eq 'Up' -and "$($_.NetAdapter.InterfaceDescription) $($_.InterfaceAlias)" -notmatch 'VPN|TAP-|WireGuard|Wintun|Tailscale|ZeroTier|OpenVPN|Fortinet|AnyConnect|Juniper|Pulse Secure|GlobalProtect|WAN Miniport|Hamachi|Radmin|NordLynx|Proton'}|ForEach-Object{$_.NetAdapter}|Sort-Object ifIndex -Unique)}
+ $idx=@(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue|ForEach-Object{[int]$_.ifIndex}|Select-Object -Unique)   # interfaces with a default route
+ @(Get-NetAdapter -ErrorAction SilentlyContinue|Where-Object{"$($_.Status)" -eq 'Up' -and $idx -contains [int]$_.ifIndex -and "$($_.InterfaceDescription) $($_.Name)" -notmatch 'VPN|TAP-|WireGuard|Wintun|Tailscale|ZeroTier|OpenVPN|Fortinet|AnyConnect|Juniper|Pulse Secure|GlobalProtect|WAN Miniport|Hamachi|Radmin|NordLynx|Proton'}|Sort-Object ifIndex)}
 function Get-StaticDns($guid){                    # servers typed in by hand (NameServer); empty = automatic from the router (DHCP)
  $o=@()
  foreach($k in "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$guid","HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\$guid"){
@@ -1003,7 +1004,7 @@ function Get-StaticDns($guid){                    # servers typed in by hand (Na
   if("$v".Trim()){$o+=@("$v" -split '[,\s]+'|Where-Object{$_})}}
  ,$o}
 function Set-CloudflareDns{
- $ad=Get-DnsAdapters;if(-not $ad.Count){throw 'no connected network adapter with an internet gateway was found'}
+ $ad=Get-DnsAdapters;if(-not $ad.Count){throw ('no connected network adapter with an internet gateway was found (adapters: {0}; default routes on interface: {1})' -f ((@(Get-NetAdapter -ErrorAction SilentlyContinue|ForEach-Object{"$($_.Name)/$($_.Status)/#$($_.ifIndex)"}) -join ', '),(@(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue|ForEach-Object ifIndex) -join ', ')))}
  $k='HKLM:\SOFTWARE\DebloatHub\Dns';if(-not(Test-Path -LiteralPath $k)){New-Item $k -Force|Out-Null}
  foreach($a in $ad){$g=[string]$a.InterfaceGuid
   if($null -eq (Get-ItemProperty -LiteralPath $k -Name $g -ErrorAction SilentlyContinue).$g){   # record the original only once
