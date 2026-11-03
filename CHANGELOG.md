@@ -23,6 +23,8 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
 - **Releases wait for the Windows tests:** a release is published only when both CI and the 4-machine Windows tests pass.
 
 ### Fixed
+- **Cloudflare DNS** now picks the adapters that carry the internet connection (those with a default gateway), instead of every physical adapter. On PCs with a Hyper-V external switch the physical card has no IP of its own, so applying failed there and the adapter that really carries the traffic (vEthernet) was skipped. VPN adapters and adapters without a gateway (WSL, Default Switch) are still left alone.
+- **Disable hibernation** is no longer offered on PCs and virtual machines that cannot hibernate: there it could be switched off but never back on ("The request is not supported"). Its undo now reports that clearly.
 - Removed *Stop Windows reinstalling Teams*: Windows 11 protects the registry key it writes (owned by TrustedInstaller), so the switch always failed there; Windows 11 23H2 and later no longer reinstall Teams personal anyway.
 - Undo no longer touches parts of a switch that DebloatHub never changed: when some parts were already in place before (e.g. AllowTelemetry = 0 set by another tool), only the parts with a recorded original are reverted.
 - Restoring a service's start type keeps its *Automatic (Delayed Start)* flag.

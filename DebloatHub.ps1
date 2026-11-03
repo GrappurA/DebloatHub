@@ -40,6 +40,8 @@ try{if(-not(Test-Path -LiteralPath $LogDir)){New-Item $LogDir -ItemType Director
  [IO.File]::AppendAllText($LogFile,("`r`n===== DebloatHub v{0} started {1:yyyy-MM-dd HH:mm:ss} as {2} =====`r`n" -f $AppVersion,(Get-Date),[Security.Principal.WindowsIdentity]::GetCurrent().Name))}catch{$LogFile=$null}
 $build=[Environment]::OSVersion.Version.Build; $W11=$build -ge 22000
 $HasBattery=$false;try{$HasBattery=[bool](Get-CimInstance Win32_Battery -ErrorAction Stop)}catch{$HasBattery=$false}   # laptops: some presets skip desktop-only items
+# Hibernation support (SYSTEM_POWER_CAPABILITIES.SystemS4, byte 6): many virtual machines and some PCs cannot hibernate at all
+$HibSupported=$true;try{Add-Type -Namespace DH -Name Pwr -MemberDefinition '[DllImport("powrprof.dll")] public static extern bool GetPwrCapabilities(byte[] caps);';$pc=New-Object byte[] 256;if([DH.Pwr]::GetPwrCapabilities($pc)){$HibSupported=[bool]$pc[6]}}catch{$HibSupported=$true}
 
 # ---------- Signed-in user: UAC may elevate to a DIFFERENT admin account, whose HKCU/APPDATA are not the user's ----------
 # Per-user switches are redirected to HKEY_USERS\<SID of the account that owns explorer.exe in this session>.
@@ -141,13 +143,13 @@ fTw $s5 'Show full path in title bar' 'Explorer shows the complete folder path (
 fTw $s5 'Hide recent & frequent items in Explorer' 'Explorer Home / Quick Access stops listing recently opened files and frequently used folders. Pinned folders stay.' Safe 'Windows-Maintenance-Tool' Any 'privacy' @((fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer' ShowRecent 0 1),(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer' ShowFrequent 0 1))
 fTw $s4 'Disable Storage Sense auto cleanup' 'Turns off Storage Sense, so Windows never deletes temp files or Recycle Bin items on its own.' Safe 'Win11Debloat, winscript' Any '' @(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy' '01' 0 1)
 fTw $s4 'Disable transparency effects' 'Turns off the blur and see-through effect on the taskbar, Start, Action Center and window backgrounds.' Safe 'Win11Debloat' Any '' @(fReg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' EnableTransparency 0 1)
-fTw $s4 'Disable hibernation' 'Runs powercfg /hibernate off: deletes hiberfil.sys and turns off Hibernate and Fast Startup. Undo turns them back on.' Moderate 'Windows-Maintenance-Tool' Any '' @(fCmd 'powercfg /hibernate off' 'powercfg /hibernate on' "(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' -Name HibernateEnabled -ErrorAction SilentlyContinue).HibernateEnabled -eq 0") 'Fine on desktops; keep it on laptops.'
+fTw $s4 'Disable hibernation' 'Runs powercfg /hibernate off: deletes hiberfil.sys and turns off Hibernate and Fast Startup. Undo turns them back on. Not offered on PCs and virtual machines whose firmware does not support hibernation.' Moderate 'Windows-Maintenance-Tool' Any '' @(fCmd 'Set-Hibernation $false' 'Set-Hibernation $true' "(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' -Name HibernateEnabled -ErrorAction SilentlyContinue).HibernateEnabled -eq 0" $null @('Cmd_C3F6801958B79D8E')) 'Fine on desktops; keep it on laptops.'
 fTw $s4 'Ultimate Performance power plan' 'Creates Windows hidden Ultimate Performance plan once, using a fixed ID so repeated Apply never piles up copies, and makes it active. CPU cores stay at high clocks and power saving is minimised. Undo switches back to the plan that was active before (Balanced if unknown) and deletes the plan.' Moderate 'winscript, Windows-Maintenance-Tool' Any 'gaming' @(fCmd 'Enable-UltimatePlan' 'Disable-UltimatePlan' '[bool]((powercfg /getactivescheme) -match ''ec2056a3-39a8-4408-993a-3b596535ebe1'')' $null @('Cmd_26F50AB0DD212109')) 'Desktops only; avoid on battery.'
 fTw $s11 'Disable Game Bar' 'Stops the Xbox button on a controller opening Game Bar and hides the Game Bar tips panel when a game starts.' Safe 'Win11Debloat' Any 'gaming' @((fReg 'HKCU:\Software\Microsoft\GameBar' UseNexusForGameBarEnabled 0 1),(fReg 'HKCU:\Software\Microsoft\GameBar' ShowStartupPanel 0 1))
 fTw $s12 'No auto-restart while signed in' 'Group Policy that tells Windows Update not to restart the PC automatically while someone is signed in.' Safe 'Win11Debloat' Any 'safe' @(fReg "$POL\WindowsUpdate\AU" NoAutoRebootWithLoggedOnUsers 1 $null)
 fTw $s12 'Disable device metadata downloads' 'Stops Windows downloading manufacturer names, photos and icons for connected devices from the internet.' Safe 'Windows-Maintenance-Tool' Any 'privacy' @(fReg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Device Metadata' PreventDeviceMetadataFromNetwork 1 $null)
 fTw $s12 'Disable BitLocker auto device encryption' 'Prevents Windows from turning on Device Encryption (BitLocker) automatically. It does not decrypt a drive that is already encrypted; check Settings > Privacy & security > Device encryption for that.' Advanced 'Win11Debloat' Any '' @(fReg 'HKLM:\SYSTEM\CurrentControlSet\Control\BitLocker' PreventDeviceEncryption 1 $null) 'Leave this OFF on laptops: encryption protects your data if the device is lost.'
-fTw $s13 'Use Cloudflare DNS (1.1.1.1)' 'Sets the DNS servers of every connected physical network adapter (Ethernet, Wi-Fi) to Cloudflare (1.1.1.1 / 1.0.0.1, plus IPv6 where enabled). VPN, Hyper-V, WSL and other virtual adapters are left alone. Undo puts back the DNS servers each adapter had before (automatic or the ones you typed in).' Advanced 'Windows-Maintenance-Tool' Any '' @(fCmd 'Set-CloudflareDns' 'Undo-CloudflareDns' 'Test-CloudflareDns' $null @('Cmd_3F2AA810B18B901E')) 'Experts only: skip it if you use a NAS or local network shares, connect to hotel or airport Wi-Fi, or your router, VPN or workplace controls DNS.'
+fTw $s13 'Use Cloudflare DNS (1.1.1.1)' 'Sets the DNS servers of every connected adapter that carries your internet connection (Ethernet, Wi-Fi, or the Hyper-V switch in front of them) to Cloudflare (1.1.1.1 / 1.0.0.1, plus IPv6 where enabled). VPN adapters and adapters without an internet gateway (WSL, Hyper-V Default Switch) are left alone. Undo puts back the DNS servers each adapter had before (automatic or the ones you typed in).' Advanced 'Windows-Maintenance-Tool' Any '' @(fCmd 'Set-CloudflareDns' 'Undo-CloudflareDns' 'Test-CloudflareDns' $null @('Cmd_3F2AA810B18B901E')) 'Experts only: skip it if you use a NAS or local network shares, connect to hotel or airport Wi-Fi, or your router, VPN or workplace controls DNS.'
 fTw $s14 'Flush DNS cache' 'Runs ipconfig /flushdns to clear the list of recently looked-up website addresses.' Safe 'Windows-Maintenance-Tool' Any '' @(fCmd 'ipconfig /flushdns')
 fTw $s14 'Clean temp files & empty Recycle Bin' 'Deletes everything in your Temp folder and the Windows Temp folder (files in use are skipped) and empties the Recycle Bin.' Safe 'Windows-Maintenance-Tool' Any '' @(fCmd 'Clear-TempAndBin') 'Close other apps first.'
 fTw $s14 'Repair system files (SFC)' 'Runs sfc /scannow, which checks every protected Windows file and replaces damaged ones from the component store. Takes 10+ minutes.' Safe 'Windows-Maintenance-Tool' Any '' @(fCmd 'sfc /scannow') 'Run this on its own, not together with other tweaks.'
@@ -164,6 +166,9 @@ fTw $s5 'Classic right-click menu (Windows 11)' 'Right-click in Explorer opens t
 fTw $s6 'Hide Copilot button on the taskbar (Windows 11)' 'Removes the Copilot button that Windows 11 23H2 added next to the clock. On newer builds the button may not exist; the Copilot app and key are not affected.' Safe 'WinUtil, Win11Debloat' 11 'privacy' @(fReg $ADV ShowCopilotButton 0 1)
 fTw $s12 'Do not install drivers through Windows Update' 'Group Policy that stops Windows Update from installing driver updates with quality updates (ExcludeWUDriversInQualityUpdate). You install drivers yourself from the GPU, chipset or laptop maker.' Moderate 'WinUtil, Sophia' Any '' @(fReg "$POL\WindowsUpdate" ExcludeWUDriversInQualityUpdate 1 $null) 'Useful if Windows Update keeps replacing your GPU driver with an older one. Remember to update drivers yourself.'
 )
+# Without firmware support hibernation can be switched off but never back on (powercfg: "The request is not supported"), so the tweak is hidden there,
+# unless hibernation is already off (then it may be DebloatHub's doing and must stay undoable).
+if(-not $HibSupported -and (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' -Name HibernateEnabled -ErrorAction SilentlyContinue).HibernateEnabled -ne 0){$db=@($db|Where-Object{$_.Name -ne 'Disable hibernation'})}
 
 # ---------- Extra guidance shown in the hover card: @(need it?, pros, cons) ----------
 $more=@{
@@ -986,8 +991,11 @@ function Reset-WUCache{
  finally{Start-Service wuauserv,bits -ErrorAction SilentlyContinue}               # always start them again, even if stopping or deleting failed
  $global:LASTEXITCODE=0}
 
-# ---------- Cloudflare DNS: physical adapters only; each adapter's own DNS servers are recorded and put back on undo ----------
-function Get-DnsAdapters{@(Get-NetAdapter -Physical -ErrorAction SilentlyContinue|Where-Object Status -eq Up)}   # not VPN, Hyper-V, WSL or Tailscale adapters
+# ---------- Cloudflare DNS: only the adapters that carry the internet connection; each adapter's own DNS servers are recorded and put back on undo ----------
+# = connected adapters with an IPv4 default gateway, which is also the Hyper-V vEthernet of an external switch (the physical card under it has no IP at all).
+# Not touched: VPN / tunnel adapters, and adapters without a gateway (WSL, Hyper-V Default Switch, host-only networks).
+function Get-DnsAdapters{
+ @(Get-NetIPConfiguration -ErrorAction SilentlyContinue|Where-Object{$_.IPv4DefaultGateway -and $_.NetAdapter -and "$($_.NetAdapter.Status)" -eq 'Up' -and "$($_.NetAdapter.InterfaceDescription) $($_.InterfaceAlias)" -notmatch 'VPN|TAP-|WireGuard|Wintun|Tailscale|ZeroTier|OpenVPN|Fortinet|AnyConnect|Juniper|Pulse Secure|GlobalProtect|WAN Miniport|Hamachi|Radmin|NordLynx|Proton'}|ForEach-Object{$_.NetAdapter}|Sort-Object ifIndex -Unique)}
 function Get-StaticDns($guid){                    # servers typed in by hand (NameServer); empty = automatic from the router (DHCP)
  $o=@()
  foreach($k in "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$guid","HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\$guid"){
@@ -995,7 +1003,7 @@ function Get-StaticDns($guid){                    # servers typed in by hand (Na
   if("$v".Trim()){$o+=@("$v" -split '[,\s]+'|Where-Object{$_})}}
  ,$o}
 function Set-CloudflareDns{
- $ad=Get-DnsAdapters;if(-not $ad.Count){throw 'no connected physical network adapter was found'}
+ $ad=Get-DnsAdapters;if(-not $ad.Count){throw 'no connected network adapter with an internet gateway was found'}
  $k='HKLM:\SOFTWARE\DebloatHub\Dns';if(-not(Test-Path -LiteralPath $k)){New-Item $k -Force|Out-Null}
  foreach($a in $ad){$g=[string]$a.InterfaceGuid
   if($null -eq (Get-ItemProperty -LiteralPath $k -Name $g -ErrorAction SilentlyContinue).$g){   # record the original only once
@@ -1041,6 +1049,12 @@ function Set-MemoryCompression([bool]$on){
  if($sm -and "$($sm.StartType)" -eq 'Disabled'){throw 'memory compression is managed by the SysMain service, which is disabled. Switch off "Disable SysMain (Superfetch)" (Background Services), press Apply, then try this again.'}
  if($sm -and "$($sm.Status)" -ne 'Running'){try{Start-Service SysMain -ErrorAction Stop}catch{throw "memory compression is managed by the SysMain service, which could not be started: $($_.Exception.Message)"}}
  if($on){Enable-MMAgent -MemoryCompression}else{Disable-MMAgent -MemoryCompression}
+ $global:LASTEXITCODE=0}
+
+# ---------- Hibernation: a clear message when Windows refuses ----------
+function Set-Hibernation([bool]$on){
+ $global:LASTEXITCODE=0;$out=& powercfg.exe /hibernate $(if($on){'on'}else{'off'}) 2>&1;$ec=$LASTEXITCODE;$msg=(@($out)|Out-String).Trim()
+ if($ec){if($on){throw "Windows could not turn hibernation back on ($msg). This PC or virtual machine may not support hibernation."}else{throw "powercfg /hibernate off failed: $msg"}}
  $global:LASTEXITCODE=0}
 
 # ---------- Run a program as the signed-in user (when UAC elevated DebloatHub to a different administrator account) ----------
@@ -1201,7 +1215,7 @@ function Log($m){[void]$sync.Q.Enqueue("$m")}
 function Get-FnText($n){$c=Get-Command $n -CommandType Function;$a=$c.ScriptBlock.Ast
  if($a -isnot [Management.Automation.Language.FunctionDefinitionAst] -and $a.Parent -is [Management.Automation.Language.FunctionDefinitionAst]){$a=$a.Parent}
  if($a -is [Management.Automation.Language.FunctionDefinitionAst]){$a.Extent.Text}else{"function $n {`n$($c.ScriptBlock.ToString())`n}"}}
-$ENGINE_TXT=$PRE+"`n"+((@('Fits-Ver','Spi-Blocked','Is-Leftover','Has-Record','Cmd-Marked','Clear-Folder','Clear-TempAndBin','Clear-CrashDumps','Clear-BrowserCaches','Reset-WUCache','Get-DnsAdapters','Get-StaticDns','Set-CloudflareDns','Undo-CloudflareDns','Test-CloudflareDns','Get-ActiveScheme','Enable-UltimatePlan','Disable-UltimatePlan','Set-MemoryCompression','Invoke-AsUser','Uninstall-OneDrive','Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Set-DxFlag','Test-DxFlag','Get-SysCheck','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
+$ENGINE_TXT=$PRE+"`n"+((@('Fits-Ver','Spi-Blocked','Is-Leftover','Has-Record','Cmd-Marked','Clear-Folder','Clear-TempAndBin','Clear-CrashDumps','Clear-BrowserCaches','Reset-WUCache','Get-DnsAdapters','Get-StaticDns','Set-CloudflareDns','Undo-CloudflareDns','Test-CloudflareDns','Get-ActiveScheme','Enable-UltimatePlan','Disable-UltimatePlan','Set-MemoryCompression','Set-Hibernation','Invoke-AsUser','Uninstall-OneDrive','Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Set-DxFlag','Test-DxFlag','Get-SysCheck','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
 # ---------- Thread safety: WPF objects (CheckBox, Border...) live ONLY on the UI thread ----------
 # Background runspaces receive plain snapshots (strings, numbers, bools, arrays, hashtables) and return plain hashtables.
 function Copy-Act($a){$c=@{};foreach($k in $a.Keys){$c[$k]=$a[$k]};$c}      # acts hold only strings/numbers/bools/$null

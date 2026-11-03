@@ -104,7 +104,7 @@ All versions and their changes are listed on the [Releases page](https://github.
 | **Memory (RAM)** | Ndu driver (non-paged pool leak), memory compression, empty standby memory |
 | **Visual Effects** | All 17 *Performance Options* effects as separate switches, plus transparency, with three presets |
 | **Autoruns** | Everything that starts automatically: every startup app (Run keys, Startup folders and Microsoft Store app startup tasks such as new Teams or Spotify, same mechanism as Task Manager), third-party scheduled tasks and third-party auto-start services. Disable only, never delete, always undoable. |
-| **System, Security & Network** | Delivery Optimization, Storage Sense, update restarts, driver updates through Windows Update, BitLocker auto-encryption, Cloudflare DNS (physical adapters only; each adapter's own DNS is restored on undo), AutoPlay, LLMNR, Remote Assistance, Windows Script Host, clipboard history, online speech, legacy Windows features (SMB 1.0, PowerShell 2.0...) |
+| **System, Security & Network** | Delivery Optimization, Storage Sense, update restarts, driver updates through Windows Update, BitLocker auto-encryption, Cloudflare DNS (only the adapters that carry your internet connection, never VPNs; each adapter's own DNS is restored on undo), AutoPlay, LLMNR, Remote Assistance, Windows Script Host, clipboard history, online speech, legacy Windows features (SMB 1.0, PowerShell 2.0...) |
 | **Maintenance & Repair** | One-time actions: SFC, DISM, component cleanup, old driver packages, temp/browser/thumbnail/crash-dump/Delivery Optimization cleanup, Windows Update reset, network reset, DNS flush, SSD TRIM |
 
 Every tweak carries a risk badge:

@@ -144,9 +144,10 @@ Write-Host 'Undo records of older versions'
 Check 'marker ids of rewritten commands match what v1.0/v1.1 wrote' {
     $old = @{
         'Cmd_382D9DC3F37109EF' = 'Disable-MMAgent -MemoryCompression'
+        'Cmd_C3F6801958B79D8E' = 'powercfg /hibernate off'
     }
     foreach ($k in $old.Keys) { Eq (Cmd-Id @{V = $old[$k] }) $k "id of '$($old[$k])'" | Out-Null }
-    $txt = [IO.File]::ReadAllText($path); foreach ($id in 'Cmd_26F50AB0DD212109', 'Cmd_3F2AA810B18B901E', 'Cmd_382D9DC3F37109EF') { if (-not $txt.Contains($id)) { throw "$id not referenced" } }; $true }
+    $txt = [IO.File]::ReadAllText($path); foreach ($id in 'Cmd_26F50AB0DD212109', 'Cmd_3F2AA810B18B901E', 'Cmd_382D9DC3F37109EF', 'Cmd_C3F6801958B79D8E') { if (-not $txt.Contains($id)) { throw "$id not referenced" } }; $true }
 
 # ---------- launcher ----------
 Write-Host 'Launcher'

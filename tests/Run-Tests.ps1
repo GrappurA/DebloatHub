@@ -148,7 +148,7 @@ DhtCheck 'Undo records are cleaned up' (-not $left.Count) (($left|Select-Object 
 
 # ---------------- 8) commands with an undo (DNS, power plan, hibernation, classic menu...): apply -> verify -> undo -> exact state back ----------------
 function DhtCmdState{                       # what the command tweaks change, beyond their own detectors
- $dns=@(foreach($ad in @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue|Where-Object Status -eq Up|Sort-Object ifIndex)){"$($ad.Name)="+(@((Get-DnsClientServerAddress -InterfaceIndex $ad.ifIndex -ErrorAction SilentlyContinue).ServerAddresses) -join ',')}) -join ' | '
+ $dns=@(foreach($ad in @(Get-DnsAdapters)){"$($ad.Name)="+(@((Get-DnsClientServerAddress -InterfaceIndex $ad.ifIndex -ErrorAction SilentlyContinue).ServerAddresses) -join ',')}) -join ' | '
  $hib=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' -Name HibernateEnabled -ErrorAction SilentlyContinue).HibernateEnabled
  $dx=(Get-ItemProperty -LiteralPath (Map-Hive 'HKCU:\Software\Microsoft\DirectX\UserGpuPreferences') -Name DirectXUserGlobalSettings -ErrorAction SilentlyContinue).DirectXUserGlobalSettings
  "dns [$dns]; plan $(Get-ActiveScheme); ultimate exists $([bool]((powercfg /list|Out-String) -match 'ec2056a3')); hibernate $hib; classic menu $(Test-Path -LiteralPath (Map-Hive 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}')); dx '$dx'"}
