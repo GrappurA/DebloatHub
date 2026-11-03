@@ -20,6 +20,7 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
 - **Tests on real Windows** (`tests/Run-Tests.ps1`, workflow *Tests*): on Windows Server 2022 and 2025, in Manual and Strict mode, every detector is checked against the real system, and every revertible registry, service, task and startup switch is applied, verified, undone with the Simple view's *Undo* and compared with the original state.
 
 ### Fixed
+- Removed *Stop Windows reinstalling Teams*: Windows 11 protects the registry key it writes (owned by TrustedInstaller), so the switch always failed there; Windows 11 23H2 and later no longer reinstall Teams personal anyway.
 - Undo no longer touches parts of a switch that DebloatHub never changed: when some parts were already in place before (e.g. AllowTelemetry = 0 set by another tool), only the parts with a recorded original are reverted.
 - Restoring a service's start type keeps its *Automatic (Delayed Start)* flag.
 - A failed apply no longer leaves its undo record behind.
