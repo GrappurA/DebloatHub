@@ -2,7 +2,7 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] - 2026-11-03
 
 ### Added
 - **Autoruns** (was *Startup Programs*): also lists third-party scheduled tasks and third-party auto-start services. Disable only, nothing is deleted:
@@ -18,6 +18,9 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
 
   App removals are the only part of Recommended that can't be undone with one click.
 - **Tests on real Windows** (`tests/Run-Tests.ps1`, workflow *Tests*): on Windows Server 2022 and 2025, in Manual and Strict mode, every detector is checked against the real system, and every revertible registry, service, task and startup switch is applied, verified, undone with the Simple view's *Undo* and compared with the original state.
+
+- **More real tests:** the Windows tests also apply and undo every command with an undo (Cloudflare DNS, Ultimate Performance, hibernation, memory compression, classic right-click menu, windowed-game optimizations) and check that the exact state comes back, and run the one-time cleanups with a junction planted in Temp to prove they never delete what it points to.
+- **Releases wait for the Windows tests:** a release is published only when both CI and the 4-machine Windows tests pass.
 
 ### Fixed
 - Removed *Stop Windows reinstalling Teams*: Windows 11 protects the registry key it writes (owned by TrustedInstaller), so the switch always failed there; Windows 11 23H2 and later no longer reinstall Teams personal anyway.

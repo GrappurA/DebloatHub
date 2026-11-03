@@ -14,8 +14,12 @@ jobs:
   test:
     uses: ./.github/workflows/ci.yml
 
+  # really applies and undoes every revertible tweak on 4 disposable Windows machines
+  windows-tests:
+    uses: ./.github/workflows/test.yml
+
   release:
-    needs: test
+    needs: [test, windows-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

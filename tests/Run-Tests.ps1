@@ -7,7 +7,8 @@
 
   Steps: parse (Windows PowerShell 5.1) -> load the script with -NoShow -> sanity checks -> every detector on a real
   system -> background scan -> UI update + screenshots (start page, Simple, Advanced) -> apply/verify/undo round trip
-  on every revertible registry/service/task/startup tweak, comparing the system state before and after.
+  on every revertible registry/service/task/startup tweak, comparing the system state before and after -> the same for
+  every command tweak with an undo (DNS, power plan, hibernation...) -> the one-time cleanups, incl. a junction planted in Temp.
 #>
 param([ValidateSet('Manual','Strict')][string]$DhtMode='Manual',[string]$DhtOut="$PSScriptRoot\..\test-results")
 
@@ -145,6 +146,39 @@ DhtCheck 'Undo restores the exact original state' (-not $diff.Count) ("{0} setti
 $left=@();foreach($a in $acts){if(Snap-Read $a){$left+=(Show-Act $a)}}
 DhtCheck 'Undo records are cleaned up' (-not $left.Count) (($left|Select-Object -First 5) -join '; ')
 
+# ---------------- 8) commands with an undo (DNS, power plan, hibernation, classic menu...): apply -> verify -> undo -> exact state back ----------------
+function DhtCmdState{                       # what the command tweaks change, beyond their own detectors
+ $dns=@(foreach($ad in @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue|Where-Object Status -eq Up|Sort-Object ifIndex)){"$($ad.Name)="+(@((Get-DnsClientServerAddress -InterfaceIndex $ad.ifIndex -ErrorAction SilentlyContinue).ServerAddresses) -join ',')}) -join ' | '
+ $hib=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' -Name HibernateEnabled -ErrorAction SilentlyContinue).HibernateEnabled
+ $dx=(Get-ItemProperty -LiteralPath (Map-Hive 'HKCU:\Software\Microsoft\DirectX\UserGpuPreferences') -Name DirectXUserGlobalSettings -ErrorAction SilentlyContinue).DirectXUserGlobalSettings
+ "dns [$dns]; plan $(Get-ActiveScheme); ultimate exists $([bool]((powercfg /list|Out-String) -match 'ec2056a3')); hibernate $hib; classic menu $(Test-Path -LiteralPath (Map-Hive 'HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}')); dx '$dx'"}
+$cmdT=@($db|Where-Object{(Fits $_) -and @($_.Acts).Count -and -not @($_.Acts|Where-Object{-not($_.K -eq 'Cmd' -and $_.U -and $_.T)}).Count})
+$cmdOk=@();$cmdBad=@();$cmdLog=@()
+foreach($ct in $cmdT){
+ if(@($ct.Acts|ForEach-Object{Safe-Test $_}) -contains $true){$cmdOk+="$($ct.Name) (already on here, skipped)";continue}
+ if($ct.Name -like 'Use Cloudflare DNS*' -and -not @(Get-DnsAdapters).Count){$cmdOk+="$($ct.Name) (no physical network adapter here, skipped)";continue}
+ $s0=DhtCmdState
+ $r1=DhtEngine @{items=@(@{Label="[APPLY] $($ct.Name)";Acts=@($ct.Acts|ForEach-Object{Copy-Act $_});Undo=$false});dry=$false;rp=$false} $APPLYCODE;$cmdLog+=$r1.Log
+ if(@($r1.Result.Failed).Count -or $r1.Errors.Count){
+  if($ct.Name -eq 'Disable memory compression' -and "$($r1.Result.Failed)" -match 'SysMain'){$cmdOk+="$($ct.Name) (SysMain is disabled here: refused with the intended message)";continue}
+  $cmdBad+="$($ct.Name): apply failed: $(@($r1.Result.Failed)+@($r1.Errors) -join ' / ')";continue}
+ if(@($ct.Acts|ForEach-Object{Safe-Test $_}) -contains $false){$cmdBad+="$($ct.Name): its detector still says off after apply"}
+ $r2=DhtEngine @{items=@(@{Label="[REVERT] $($ct.Name)";Acts=@($ct.Acts|ForEach-Object{Copy-Act $_});Undo=$true});dry=$false;rp=$false} $APPLYCODE;$cmdLog+=$r2.Log
+ if(@($r2.Result.Failed).Count -or $r2.Errors.Count){$cmdBad+="$($ct.Name): undo failed: $(@($r2.Result.Failed)+@($r2.Errors) -join ' / ')";continue}
+ $s1=DhtCmdState
+ if($s1 -ne $s0){$cmdBad+="$($ct.Name): not back to the original after undo. Before: $s0. After: $s1"}else{$cmdOk+=$ct.Name}}
+DhtCheck 'Commands with undo: apply, verify, undo, exact state back' (-not $cmdBad.Count -and $cmdOk.Count) ("{0} tweaks: {1}{2}" -f $cmdT.Count,($cmdOk -join ', '),$(if($cmdBad.Count){' || FAILED: '+($cmdBad -join ' || ')}))
+
+# ---------------- 9) one-time cleanups run, and never follow a junction out of their folder ----------------
+$jt=Join-Path $env:SystemDrive 'dh-junction-target';New-Item $jt -ItemType Directory -Force|Out-Null;Set-Content (Join-Path $jt 'precious.txt') 'must survive'
+$jl=Join-Path "$UserLocal\Temp" 'dh-junction';try{New-Item -ItemType Junction -Path $jl -Target $jt -Force|Out-Null}catch{}
+$jMade=Test-Path -LiteralPath $jl
+$once='Clean temp files & empty Recycle Bin','Clear crash dumps & error reports','Clear browser caches (Edge, Chrome, Firefox)','Reset Windows Update components','Flush DNS cache','Clean up old driver versions (Driver Store)'
+$oitems=@(foreach($n in $once){$ot=$db|Where-Object{$_.Name -eq $n}|Select-Object -First 1;if($ot){@{Label="[APPLY] $n";Acts=@($ot.Acts|ForEach-Object{Copy-Act $_});Undo=$false}}})
+$ro=DhtEngine @{items=$oitems;dry=$false;rp=$false} $APPLYCODE;$cmdLog+=$ro.Log
+DhtCheck 'One-time cleanups run without errors' ($oitems.Count -eq $once.Count -and -not @($ro.Result.Failed).Count -and -not $ro.Errors.Count) ("{0} actions{1}" -f $oitems.Count,$(if(@($ro.Result.Failed).Count -or $ro.Errors.Count){'; '+((@($ro.Result.Failed)+@($ro.Errors)) -join ' || ')}))
+DhtCheck 'Temp cleanup removes a junction but never the files it points to' ($jMade -and (Test-Path (Join-Path $jt 'precious.txt')) -and -not (Test-Path -LiteralPath $jl)) "junction created: $jMade; target file kept: $(Test-Path (Join-Path $jt 'precious.txt')); junction removed: $(-not (Test-Path -LiteralPath $jl))"
+
 }catch{DhtCheck 'Test run finished without an unexpected error' $false "$($_.Exception.Message) at $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())"}
-try{$ap.Log+$un.Log|Set-Content (Join-Path $DhtOut 'engine-log.txt') -Encoding UTF8}catch{}
+try{$ap.Log+$un.Log+$cmdLog|Set-Content (Join-Path $DhtOut 'engine-log.txt') -Encoding UTF8}catch{}
 DhtFinish
