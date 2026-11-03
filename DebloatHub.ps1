@@ -1004,7 +1004,7 @@ function Get-StaticDns($guid){                    # servers typed in by hand (Na
   if("$v".Trim()){$o+=@("$v" -split '[,\s]+'|Where-Object{$_})}}
  ,$o}
 function Set-CloudflareDns{
- $ad=Get-DnsAdapters;if(-not $ad.Count){throw ('no connected network adapter with an internet gateway was found (adapters: {0}; default routes on interface: {1})' -f ((@(Get-NetAdapter -ErrorAction SilentlyContinue|ForEach-Object{"$($_.Name)/$($_.Status)/#$($_.ifIndex)"}) -join ', '),(@(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue|ForEach-Object ifIndex) -join ', ')))}
+ $ad=@(Get-DnsAdapters);if(-not $ad.Count){throw ('no connected network adapter with an internet gateway was found (adapters: {0}; default routes on interface: {1})' -f ((@(Get-NetAdapter -ErrorAction SilentlyContinue|ForEach-Object{"$($_.Name)/$($_.Status)/#$($_.ifIndex)"}) -join ', '),(@(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue|ForEach-Object ifIndex) -join ', ')))}
  $k='HKLM:\SOFTWARE\DebloatHub\Dns';if(-not(Test-Path -LiteralPath $k)){New-Item $k -Force|Out-Null}
  foreach($a in $ad){$g=[string]$a.InterfaceGuid
   if($null -eq (Get-ItemProperty -LiteralPath $k -Name $g -ErrorAction SilentlyContinue).$g){   # record the original only once
@@ -1023,7 +1023,7 @@ function Undo-CloudflareDns{
    Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ResetServerAddresses}}   # set by DebloatHub 1.0.x, which kept no record: back to automatic
  Remove-Item -LiteralPath $k -Recurse -Force -ErrorAction SilentlyContinue
  $global:LASTEXITCODE=0}
-function Test-CloudflareDns{$ad=Get-DnsAdapters;[bool]($ad.Count -and -not @($ad|Where-Object{(@((Get-DnsClientServerAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4).ServerAddresses) -join ',') -ne '1.1.1.1,1.0.0.1'}).Count)}
+function Test-CloudflareDns{$ad=@(Get-DnsAdapters);[bool]($ad.Count -and -not @($ad|Where-Object{(@((Get-DnsClientServerAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4).ServerAddresses) -join ',') -ne '1.1.1.1,1.0.0.1'}).Count)}
 
 # ---------- Ultimate Performance plan: undo returns to the plan that was active before, not always Balanced ----------
 function Get-ActiveScheme{if((powercfg /getactivescheme|Out-String) -match '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}'){$Matches[0].ToLowerInvariant()}}
