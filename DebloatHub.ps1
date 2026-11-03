@@ -6,7 +6,7 @@ param([switch]$Elevated,[switch]$ShowConsole,[switch]$NoShow,   # -NoShow: build
  [ValidateSet('Debloat','Gaming','Undo')][string]$Preset,[string]$Selection,[switch]$DryRun,[switch]$NoRestorePoint,
  # -Screenshot <folder>: renders the Advanced and Simple views to PNG files after the first scan, then closes (used by CI to refresh the README screenshots)
  [string]$Screenshot)
-$AppVersion='1.2.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$AppVersion='1.2.1'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
 $MyPath=$PSCommandPath
 $Headless=[bool]($Preset -or $Selection)
 if($Selection){$Selection=[IO.Path]::GetFullPath($Selection)}   # the elevated copy may start in another folder
@@ -704,7 +704,7 @@ $secs=@($gk|Where-Object{$g=$_;@($db|Where-Object{$_.Sec -eq $g}).Count})
 
 # ---------- Recommended preset: one explicit, reviewable list ----------
 # Rules: (1) a performance or privacy win, (2) nothing a typical user relies on stops working, (3) undoable with one click,
-# EXCEPT bloat-app removals (Store reinstall only). Kept on purpose: Teams, Quick Assist, Phone Link, Media Player, Movies & TV, Get Help.
+# EXCEPT bloat-app removals (Store reinstall only). Kept on purpose: Teams, and Media Player + Movies & TV (the default music and video players).
 # Entries: 'Tweak name' = whole tweak; 'Tweak name|Sub-switch label' = one sub-switch; 'APP:<package>' = one app wherever it is listed.
 # Startup apps: every entry that does not match $STARTUP_KEEP (drivers, audio, touchpad, GPU, security, sync, G-Helper, Teams...).
 $RECOMMENDED=@(
@@ -726,6 +726,9 @@ $RECOMMENDED=@(
  'APP:Microsoft.BingNews','APP:Microsoft.BingWeather','APP:Microsoft.Getstarted','APP:Microsoft.MicrosoftOfficeHub','APP:Microsoft.MicrosoftSolitaireCollection','APP:Microsoft.WindowsFeedbackHub','APP:Clipchamp.Clipchamp'
  'APP:Microsoft.SkypeApp','APP:Microsoft.People','APP:Microsoft.Messaging','APP:Microsoft.Office.Sway','APP:Microsoft.OneConnect','APP:Microsoft.WindowsReadingList','APP:Microsoft.549981C3F5F10'
  'APP:Microsoft.OutlookForWindows','APP:microsoft.windowscommunicationsapps','APP:Microsoft.Windows.DevHome','APP:Microsoft.Todos','APP:MicrosoftCorporationII.MicrosoftFamily','APP:Microsoft.BingSearch','APP:Microsoft.MicrosoftJournal'
+ 'APP:Microsoft.GetHelp','APP:MicrosoftCorporationII.QuickAssist','APP:Microsoft.YourPhone','APP:MicrosoftWindows.CrossDevice','APP:MicrosoftWindows.Client.WebExperience','APP:Microsoft.WindowsMaps','APP:Microsoft.PowerAutomateDesktop'
+ # bloat services to Manual (in Manual mode they still start when something asks for them)
+ 'Xbox & Game Pass services','Phone Link & cross-device services','Printing & scanning services|Fax','Remote Desktop & Remote Registry (incoming)|Remote Registry'
 )+$vfxRec
 $STARTUP_KEEP=$ESSENTIAL
 function Is-RecAct($a,$t){($a.K -eq 'App' -and ($RECOMMENDED -contains "APP:$($a.N)")) -or ($a.K -eq 'Startup' -and $t.Risk -ne 'Advanced' -and "$($a.N) $($t.Desc)" -notmatch $STARTUP_KEEP)}
@@ -1207,7 +1210,7 @@ function Update-Bar{$n=0;$pt=@{}
 # ---------- Background jobs: the window stays usable while scans and applies run ----------
 $script:busy=$false;$script:job=$null;$script:res=$null
 function Show-Load($m){$ld.BeginAnimation([Windows.UIElement]::OpacityProperty,$null);$ld.Opacity=1;$ld.Visibility='Visible';$ldText.Text=$m;if($sStatus){$sStatus.Text=$m};if($simpleView){Update-Simple}}
-function Hide-Load{$an=New-Object Windows.Media.Animation.DoubleAnimation;$an.From=1;$an.To=0;$an.Duration=[Windows.Duration]::new([TimeSpan]::FromMilliseconds(250));$an.Add_Completed({$ld.Visibility='Collapsed'});$ld.BeginAnimation([Windows.UIElement]::OpacityProperty,$an)}
+function Hide-Load{foreach($pb in $ldBar,$sBar){if($pb){$pb.Visibility='Collapsed';$pb.Value=0}};$an=New-Object Windows.Media.Animation.DoubleAnimation;$an.From=1;$an.To=0;$an.Duration=[Windows.Duration]::new([TimeSpan]::FromMilliseconds(250));$an.Add_Completed({$ld.Visibility='Collapsed'});$ld.BeginAnimation([Windows.UIElement]::OpacityProperty,$an)}
 $PRE=@'
 $ErrorActionPreference='Stop'
 $Mar=[Runtime.InteropServices.Marshal]
@@ -1234,7 +1237,7 @@ function Assert-Pure($o,$path='root',$depth=0){                              # g
 function Invoke-UI([scriptblock]$uiBlock){if($w.Dispatcher.CheckAccess()){& $uiBlock}else{$w.Dispatcher.Invoke([Action]$uiBlock)}}   # NOTE: the parameter must not be called $sb - that is the status-badge table the callee reads (dynamic scoping)   # always applies control changes on the UI dispatcher
 function New-EngineJob($vars,$code){                                     # one background runspace with the engine functions and the plain input data
  $q=New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
- $sync=[hashtable]::Synchronized(@{Q=$q;Msg='';Result=$null})
+ $sync=[hashtable]::Synchronized(@{Q=$q;Msg='';Pct=$null;Result=$null})
  $rs=[runspacefactory]::CreateRunspace();$rs.ApartmentState='STA';$rs.Open()
  foreach($kv in @{sync=$sync;W11=$W11;OtherUser=$OtherUser;UserLocal=$UserLocal;UserSid=$UserSid}.GetEnumerator()){$rs.SessionStateProxy.SetVariable($kv.Key,$kv.Value)}
  foreach($k in $vars.Keys){$rs.SessionStateProxy.SetVariable($k,$vars[$k])}
@@ -1256,13 +1259,14 @@ function Invoke-Sync($vars,$code){                                       # unatt
 $SCANCODE=@'
 # Input ($tweaks, $units) = plain snapshots from New-ScanData. Output = plain hashtables only; no WPF object is ever touched here.
 try{
- $sync.Msg='Reading installed apps...'
+ $sync.Pct=2;$sync.Msg='Reading installed apps...'
  $script:apps=@(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue|ForEach-Object Name)
- $sync.Msg='Reading Windows features...'
+ $sync.Pct=8;$sync.Msg='Reading Windows features...'
  $script:fs=@{};try{Get-WindowsOptionalFeature -Online -ErrorAction Stop|ForEach-Object{$script:fs[$_.FeatureName]=[string]$_.State}}catch{Log '   (could not read optional features)'}
  $sync.Msg='Checking settings, services and tasks...'
  $stat=@{};$ust=@{};$ast=@{};$orph=@{}
- foreach($t in $tweaks){
+ $tn=0;$tt=[Math]::Max(1,@($tweaks).Count)
+ foreach($t in $tweaks){$tn++;if($tn % 5 -eq 0){$sync.Pct=[int](15+75*$tn/$tt);$sync.Msg="Checking settings, services and tasks: $tn of $tt"}
   if(Fits $t){$g=Get-StateEx $t;$stat[$t.Name]=$g.State;$ast[$t.Name]=$g.Acts}
   elseif(Is-Leftover $t){$g=Get-StateEx $t;$ast[$t.Name]=$g.Acts;$stat[$t.Name]=$(if($g.State -in 'Applied','Partial'){'Leftover'}else{'N/A'})}
   else{$stat[$t.Name]='N/A'}}
@@ -1274,27 +1278,40 @@ try{
    else{$ust[$u.Key]='N/A'}
    continue}
   $ust[$u.Key]=if($u.Sub){$r0=Safe-Test $u.Acts[0];if($r0 -eq $true -and (Act-Absent $u.Acts[0])){'Not present'}elseif($r0 -eq $true){'Applied'}else{'Not applied'}}else{$stat[$u.TweakName]}}
- $sync.Msg='Checking hardware and drivers...';$sys=@();try{$sys=Get-SysCheck}catch{}   # plain assignment: Get-SysCheck returns the array as ONE object (,$out)
+ $sync.Pct=92;$sync.Msg='Checking hardware and drivers...';$sys=@();try{$sys=Get-SysCheck}catch{}   # plain assignment: Get-SysCheck returns the array as ONE object (,$out)
  $sync.Result=@{Ok=$true;Error='';Stat=$stat;Ust=$ust;ActSt=$ast;Sys=$sys;Orph=$orph}
 }catch{$sync.Result=@{Ok=$false;Error="$($_.Exception.Message)";Stat=@{};Ust=@{};ActSt=@{};Orph=@{}}}
 '@
 $APPLYCODE=@'
 # Input: $items (plain data), $dry, $rp. Output: $sync.Result = plain hashtable with the verified outcome of every item.
 $res=@{Dry=[bool]$dry;Done=0;Skipped=0;Failed=@();RpFailed=$false}
-$tot=@($items).Count;$n=0
+$tot=@($items).Count;$n=0;$sync.Pct=0
+# progress: share of all actions done, and a time estimate from the speed so far (one-time repairs like SFC make it a rough guide)
+$actTot=[Math]::Max(1,@($items|ForEach-Object{@($_.Acts).Count}|Measure-Object -Sum).Sum);$actDone=0;$jobT0=Get-Date
+function Fmt-Left($sec){if($sec -lt 60){"about $([Math]::Max(5,[int]([Math]::Ceiling($sec/5)*5))) s left"}else{"about $([int][Math]::Ceiling($sec/60)) min left"}}
 if($rp){$sync.Msg='Creating restore point...';Log 'Creating restore point...'
  $rpk='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore'
  $rpo=(Get-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue).SystemRestorePointCreationFrequency
  # Is System Protection already on for the Windows drive? (SPP\Clients lists the protected volumes as "...(C%3A)")
  $spc=[string](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SPP\Clients' -ErrorAction SilentlyContinue).'{09F7EDC5-294E-4180-AF6A-FB0E6A0E9513}'
- $spOn=$spc -match [regex]::Escape("($($env:SystemDrive[0])%3A)")
+ $spOn=$spc -match [regex]::Escape("($($env:SystemDrive[0])%3A)");$vssFix=@()
  try{New-ItemProperty $rpk SystemRestorePointCreationFrequency -Value 0 -PropertyType DWord -Force|Out-Null
+     # System Restore needs the Volume Shadow Copy service and its provider. Debloat tools sometimes disable them; then Checkpoint-Computer fails with
+     # "the service cannot be started because it is disabled". Set them to Manual for the restore point and put back what was there afterwards.
+     foreach($sn in 'VSS','swprv'){$sv=Get-Service $sn -ErrorAction SilentlyContinue
+      if($sv -and "$($sv.StartType)" -eq 'Disabled'){Set-Service $sn -StartupType Manual;$vssFix+=$sn;Log "   $($sv.DisplayName) was Disabled (often done by other debloat tools); set to Manual so a restore point can be made"}}
      if(-not $spOn){Enable-ComputerRestore -Drive "$env:SystemDrive\";Log "   System Protection was off for $env:SystemDrive and has been turned ON so a restore point can be made. It keeps using some disk space for restore points; you can turn it off again in System Properties > System Protection."}
      Checkpoint-Computer -Description 'DebloatHub' -RestorePointType MODIFY_SETTINGS}
- catch{$res.RpFailed=$true;Log "   ! restore point failed: $($_.Exception.Message)"}
- finally{if($null -eq $rpo){Remove-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue}else{Set-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -Value $rpo}}}
+ catch{$res.RpFailed=$true;Log "   ! restore point failed: $($_.Exception.Message)"
+  if("$($_.Exception.Message)" -match 'disabled|does not have enabled devices'){Log '   (a service System Restore needs is disabled: check "Volume Shadow Copy" and "Microsoft Software Shadow Copy Provider" in services.msc - Manual is the Windows default)'}}
+ finally{foreach($sn in $vssFix){try{Set-Service $sn -StartupType Disabled;Log "   $sn set back to Disabled, as it was"}catch{}}
+  if($null -eq $rpo){Remove-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue}else{Set-ItemProperty $rpk -Name SystemRestorePointCreationFrequency -Value $rpo}}}
 if($res.RpFailed){Log 'Nothing was changed, because the restore point you asked for could not be created.';$items=@()}   # never apply without the safety net the user asked for
-foreach($it in $items){$n++;$sync.Msg="Working $n of ${tot}: $($it.Label)";Log $it.Label
+$jobT0=Get-Date
+foreach($it in $items){$n++
+ $pct=[int](100*$actDone/$actTot);$el=((Get-Date)-$jobT0).TotalSeconds
+ $eta=if($actDone -gt 0 -and $el -gt 2){Fmt-Left ($el/$actDone*($actTot-$actDone))}else{'estimating time...'}
+ $sync.Pct=$pct;$sync.Msg="Step $n of ${tot} - $pct% done - ${eta}`n$($it.Label -replace '^\[(APPLY|REVERT|COMPLETE)\] ','')";Log $it.Label
  $bad=@();$did=0
  $own=$it.Undo -and [bool]@($it.Acts|Where-Object{$_.K -notin 'App','Cmd' -and (Snap-Read $_)}).Count   # DebloatHub recorded originals for this switch
  foreach($a in $it.Acts){Log "   $(Show-Act $a)";if($dry){continue}
@@ -1312,8 +1329,10 @@ foreach($it in $items){$n++;$sync.Msg="Working $n of ${tot}: $($it.Label)";Log $
    if($null -ne $after -and $after -eq [bool]$it.Undo){throw "the change did not take effect (the setting is still $(if($it.Undo){'applied'}else{'not applied'}))"}
    $did++}
   catch{$bad+="$(Show-Act $a): $($_.Exception.Message)";Log "   ! $($_.Exception.Message)"}}
+ $actDone+=@($it.Acts).Count
  if($dry){continue}
  if($bad.Count){$res.Failed+="$($it.Label)`n      $($bad -join "`n      ")"}elseif($did){$res.Done++}else{$res.Skipped++}}
+$sync.Pct=100
 if($dry){Log 'Dry run finished - nothing was changed.'}
 elseif($res.RpFailed){}
 else{Log "Finished: $($res.Done) item(s) changed and verified, $($res.Skipped) already in the requested state, $($res.Failed.Count) failed."
@@ -1486,7 +1505,8 @@ $xaml=@'
   <StackPanel Orientation="Horizontal"><Grid Width="18" Height="18" RenderTransformOrigin="0.5,0.5" Margin="0,0,10,0"><Grid.RenderTransform><RotateTransform x:Name="rot"/></Grid.RenderTransform>
    <Grid.Triggers><EventTrigger RoutedEvent="FrameworkElement.Loaded"><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="rot" Storyboard.TargetProperty="Angle" From="0" To="360" Duration="0:0:0.9" RepeatBehavior="Forever"/></Storyboard></BeginStoryboard></EventTrigger></Grid.Triggers>
    <Path Data="M 9,2 A 7,7 0 1 1 2,9" Stroke="#4CC2FF" StrokeThickness="2.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/></Grid>
-   <TextBlock x:Name="ldText" Text="Loading applied tweaks..." VerticalAlignment="Center" FontSize="13"/></StackPanel></Border>
+   <StackPanel VerticalAlignment="Center"><TextBlock x:Name="ldText" Text="Loading applied tweaks..." FontSize="13" MaxWidth="460" TextWrapping="Wrap"/>
+    <ProgressBar x:Name="ldBar" Height="5" Minimum="0" Maximum="100" Margin="0,5,0,1" Foreground="#4CC2FF" Background="#3A3A3A" BorderThickness="0" Visibility="Collapsed"/></StackPanel></StackPanel></Border>
  <Border x:Name="simpleRoot" Grid.ColumnSpan="2" Background="#1E1E1E" Visibility="Collapsed"><Grid>
   <StackPanel x:Name="chooser" VerticalAlignment="Center" HorizontalAlignment="Center" Width="780">
    <TextBlock Text="DebloatHub" FontSize="44" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{StaticResource Brand}"/>
@@ -1508,12 +1528,13 @@ $xaml=@'
    <DockPanel><Button x:Name="bToAdv" DockPanel.Dock="Right" Content="Advanced options" Style="{StaticResource Btn}" VerticalAlignment="Center"/>
     <TextBlock Text="DebloatHub" FontSize="30" FontWeight="Bold" Foreground="{StaticResource Brand}" VerticalAlignment="Center"/></DockPanel>
    <StackPanel Grid.Row="1" Margin="2,14,0,16"><TextBlock x:Name="sStatus" FontSize="15" Foreground="#C8C8C8" TextWrapping="Wrap" Text="Checking your PC..."/>
+    <ProgressBar x:Name="sBar" Height="8" Minimum="0" Maximum="100" Margin="0,8,0,0" Foreground="#4CC2FF" Background="#2B2B2B" BorderThickness="0" Visibility="Collapsed"/>
     <TextBlock x:Name="sTips" FontSize="12.5" Foreground="#FFB74D" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="Collapsed"/></StackPanel>
    <UniformGrid Grid.Row="2" Columns="3" Height="200">
     <Button x:Name="bRec" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tRec" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
      <StackPanel><TextBlock Text="Debloat" FontSize="22" FontWeight="SemiBold"/>
-      <TextBlock Text="Turns off ads, telemetry, Widgets, startup junk and bloat apps (Teams and essentials are kept)." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+      <TextBlock Text="Turns off ads, telemetry, Widgets, startup junk, bloat services and bloat apps (Teams and the media players are kept)." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
     <Button x:Name="bGame" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tGame" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
      <StackPanel><TextBlock Text="Debloat + Gaming" FontSize="22" FontWeight="SemiBold"/>
@@ -1535,8 +1556,8 @@ $xaml=@'
 '@
 $w=[Windows.Markup.XamlReader]::Parse($xaml)
 $w.Title="DebloatHub v$AppVersion"
-'info','sum','nav','txt','pnl','log','ld','ldText','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bGame','bUndo','tRec','tGame','tUndo','sRP','lnkShow','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
-$pSafe.ToolTip='Recommended: performance and privacy tweaks, bloat-app removal (Teams, Quick Assist, Phone Link and media players are kept) and non-essential startup apps off. Everything except the removed apps can be undone with one click. Tweaks in this preset carry a "Recommended" badge.'
+'info','sum','nav','txt','pnl','log','ld','ldText','ldBar','sBar','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bGame','bUndo','tRec','tGame','tUndo','sRP','lnkShow','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
+$pSafe.ToolTip='Recommended: performance and privacy tweaks, bloat-app removal (only Teams and the Media Player / Movies & TV players are kept), bloat services set to start on demand and non-essential startup apps off. Everything except the removed apps can be undone with one click. Tweaks in this preset carry a "Recommended" badge.'
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
 $bc=New-Object Windows.Media.BrushConverter
 function Badge($t,$c,$tip){$b=New-Object Windows.Controls.Border;$b.Background=$bc.ConvertFromString($c)
@@ -1677,6 +1698,7 @@ $timer=New-Object Windows.Threading.DispatcherTimer;$timer.Interval=[TimeSpan]::
 $timer.Add_Tick({$j=$script:job;if(-not $j){return}
  $m=$null;while($j.Sync.Q.TryDequeue([ref]$m)){Log $m}
  if($j.Sync.Msg){$ldText.Text=$j.Sync.Msg;if($sStatus -and $simpleView.Visibility -eq 'Visible'){$sStatus.Text=$j.Sync.Msg}}
+ if($null -ne $j.Sync.Pct){foreach($pb in $ldBar,$sBar){if($pb){$pb.Visibility='Visible';$pb.Value=[double]$j.Sync.Pct}}}
  if($j.H.IsCompleted){$timer.Stop()
   try{[void]$j.PS.EndInvoke($j.H)}catch{Log "! $($_.Exception.Message)"}
   foreach($er in @($j.PS.Streams.Error)){Log "! $($er.ToString())"}

@@ -2,6 +2,17 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-11-03
+
+### Added
+- **Progress bar with time left.** While changes are applied, the Simple view and the loading indicator show "Step 12 of 70 - 35% done - about 1 min left" and a progress bar; the scan shows its progress too.
+
+### Changed
+- **Recommended goes further, as requested:** it now also removes Get Help, Quick Assist, Phone Link (and its helper), the Widgets package, Maps and Power Automate, so only Teams and the default Media Player and Movies & TV players are kept. It also sets the Xbox, Phone Link, Fax and Remote Registry services to start on demand (Manual mode: they still start when something asks for them).
+
+### Fixed
+- **Restore point failed with "the service cannot be started because it is disabled".** System Restore needs the Volume Shadow Copy service and the Microsoft Software Shadow Copy Provider, which other debloat tools often disable. DebloatHub now sets them to Manual just for the restore point and puts back what was there afterwards; if it still fails, the log says which services to check.
+
 ## [1.2.0] - 2026-11-03
 
 ### Added
