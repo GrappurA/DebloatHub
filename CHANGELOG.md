@@ -7,6 +7,7 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
 ### Added
 - **One-line install:** paste `irm https://grappura.github.io/DebloatHub/install.ps1 | iex` into PowerShell. The small installer downloads `DebloatHub.ps1` from the latest release, checks its SHA-256 against the release's `SHA256SUMS.txt`, keeps it in `%LOCALAPPDATA%\DebloatHub` and starts it. Running the line again updates. The same `install.ps1` is attached to every release (for networks that block github.io).
 - **Download page** at https://grappura.github.io/DebloatHub/ with the one-liner (copy button) and the zip.
+- Publishing a release retries when GitHub's API fails, fills in missing files on a re-run, and checks that the zip, `DebloatHub.ps1`, `install.ps1` and `SHA256SUMS.txt` are all attached.
 - The zip and the Releases page stay exactly as before; every release now also lists `install.ps1` in `SHA256SUMS.txt`. CI runs the installer on Windows against the latest release, and the Pages workflow checks the published one-liner end to end.
 
 ## [1.2.1] - 2026-11-03

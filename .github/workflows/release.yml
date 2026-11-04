@@ -88,5 +88,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/DebloatHub.zip dist/DebloatHub.ps1 dist/install.ps1 dist/SHA256SUMS.txt \
-            --title "DebloatHub ${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag
+          files="dist/DebloatHub.zip dist/DebloatHub.ps1 dist/install.ps1 dist/SHA256SUMS.txt"
+          # GitHub's API sometimes answers 500: retry, and if the release already exists (a re-run, or a half-finished
+          # attempt), update it and upload every file again instead of failing.
+          for try in 1 2 3; do
+            if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              gh release edit "$GITHUB_REF_NAME" --title "DebloatHub ${GITHUB_REF_NAME}" --notes-file notes.md \
+                && gh release upload "$GITHUB_REF_NAME" $files --clobber && break
+            else
+              gh release create "$GITHUB_REF_NAME" $files --title "DebloatHub ${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag && break
+            fi
+            echo "::warning::attempt $try failed, retrying in 20 s"; sleep 20
+          done
+
+      # The README's download button and the one-liner depend on these exact files: never leave a release without them
+      - name: Check that every file is on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          have=$(gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name')
+          echo "$have"
+          for f in DebloatHub.zip DebloatHub.ps1 install.ps1 SHA256SUMS.txt; do
+            echo "$have" | grep -qx "$f" || { echo "::error::$f is missing from the release"; exit 1; }
+          done
