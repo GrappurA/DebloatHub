@@ -49,7 +49,7 @@ Check 'Maximum never touches what must keep working (Night light, Snipping Tool,
 }
 Check 'startup rules: Recommended keeps Teams, drivers and sync; Maximum turns Teams off but keeps the rest' {
     $vfxRec = @()
-    foreach ($v in '$ESSENTIAL', '$STARTUP_KEEP', '$MAX_KEEP', '$RECOMMENDED', '$MAXIMUM') { . ([scriptblock]::Create($assign[$v].Extent.Text)) }
+    foreach ($v in '$ESSENTIAL', '$STARTUP_KEEP', '$MAX_KEEP', '$MAX_TASK_KEEP', '$RECOMMENDED', '$MAXIMUM') { . ([scriptblock]::Create($assign[$v].Extent.Text)) }
     . (Load 'Is-StartupT', 'Is-RecAct', 'Is-MaxAct')
     function T($name, $desc, $risk = 'Safe') { [pscustomobject]@{ Name = $name; Desc = $desc; Risk = $risk; Acts = @(@{ K = 'Startup'; N = 'x' }) } }
     $teams = T 'Disable at startup: MSTeams - TeamsTfwStartupTask (Store app)' 'Store app startup task: MSTeams_8wekyb3d8bbwe\TeamsTfwStartupTask'
@@ -59,8 +59,12 @@ Check 'startup rules: Recommended keeps Teams, drivers and sync; Maximum turns T
     $svc = [pscustomobject]@{ Name = 'Service: Some Vendor Service'; Desc = 'Third-party service'; Risk = 'Moderate'; Acts = @(@{ K = 'SvcM'; N = 'x' }) }
     $svcA = [pscustomobject]@{ Name = 'Service: Bluetooth Helper'; Desc = 'Third-party service'; Risk = 'Advanced'; Acts = @(@{ K = 'SvcM'; N = 'x' }) }
     $sql = T 'Disable at startup: MySQL Notifier' 'Launches at sign-in: C:\Program Files (x86)\MySQL\MySQL Notifier\MySQLNotifier.exe'
-    $r = foreach ($x in $teams, $spot, $rtk, $od, $svc, $svcA, $sql) { "$([int][bool](Is-RecAct $x.Acts[0] $x))$([int][bool](Is-MaxAct $x.Acts[0] $x))" }
-    Eq ($r -join ',') '01,11,00,00,01,00,00' 'Recommended/Maximum for Teams, Spotify, Realtek, OneDrive, vendor service, Advanced service, MySQL' }
+    function K($name, $desc, $risk = 'Safe') { [pscustomobject]@{ Name = $name; Desc = $desc; Risk = $risk; Acts = @(@{ K = 'Task'; N = 'x' }) } }
+    $tFf = K 'Task: Firefox Default Browser Agent 308046B0AF4A39CB' 'Scheduled task \Mozilla\Firefox Default Browser Agent runs: C:\Program Files\Mozilla Firefox\default-browser-agent.exe'
+    $tUp = K 'Task: MicrosoftEdgeUpdateTaskMachineCore' 'Scheduled task \MicrosoftEdgeUpdateTaskMachineCore runs: C:\Program Files (x86)\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe'
+    $tVpn = K 'Task: Proton VPN NRPT watchdog' 'Scheduled task \Proton VPN NRPT watchdog runs: powershell.exe' 'Moderate'
+    $r = foreach ($x in $teams, $spot, $rtk, $od, $svc, $svcA, $sql, $tFf, $tUp, $tVpn) { "$([int][bool](Is-RecAct $x.Acts[0] $x))$([int][bool](Is-MaxAct $x.Acts[0] $x))" }
+    Eq ($r -join ',') '01,11,00,00,01,00,00,01,00,00' 'Recommended/Maximum for Teams, Spotify, Realtek, OneDrive, vendor service, Advanced service, MySQL, Firefox agent task, Edge updater task, VPN task' }
 Check 'every fTw tweak has pros/cons in $more' {
     $keys = @{}
     foreach ($h in $assign['$more'].Right.FindAll({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)) { foreach ($kv in $h.KeyValuePairs) { $keys[$kv.Item1.Value] = 1 } }
@@ -146,6 +150,26 @@ Check 'returns 0 for a missing folder' { Eq (Clear-Folder (Join-Path $base 'nope
 Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
 
 # ---------- version fit / leftovers / state ----------
+Write-Host 'Remove DebloatHub'
+& {
+    . (Load 'Clear-Folder', 'Map-Hive', 'Remove-DebloatHub')
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ("dht-rm-" + [guid]::NewGuid().ToString('N')); $null = New-Item -ItemType Directory $tmp
+    $oldPD = $env:ProgramData; $env:ProgramData = Join-Path $tmp 'pd'; $UserLocal = Join-Path $tmp 'local'; $UserHive = ''; $Headless = $true; $script:needReboot = $false
+    $null = New-Item -ItemType Directory -Force "$env:ProgramData\DebloatHub\Logs", "$UserLocal\DebloatHub"
+    Set-Content "$env:ProgramData\DebloatHub\Logs\DebloatHub-2026-01-01.log" 'x'; Set-Content "$UserLocal\DebloatHub\DebloatHub.ps1" 'x'
+    $zip = Join-Path $tmp 'zip\DebloatHub'; $dev = Join-Path $tmp 'dev'; $null = New-Item -ItemType Directory -Force $zip, $dev
+    foreach ($f in 'DebloatHub.ps1', 'Start DebloatHub.bat', 'README.txt', 'LICENSE') { Set-Content (Join-Path $zip $f) 'x'; Set-Content (Join-Path $dev $f) 'x' }
+    Set-Content (Join-Path $dev 'my-notes.txt') 'keep me'
+    try {
+        $MyPath = Join-Path $zip 'DebloatHub.ps1'; $null = Remove-DebloatHub *>&1
+        Check 'removes the logs folder and the installed copy' { if (Test-Path "$env:ProgramData\DebloatHub") { throw 'logs left' }; if (Test-Path "$UserLocal\DebloatHub") { throw 'installed copy left' } }
+        Check 'removes an unchanged zip folder' { if (Test-Path $zip) { throw 'zip folder left' } }
+        $MyPath = Join-Path $dev 'DebloatHub.ps1'; $null = Remove-DebloatHub *>&1
+        Check 'never touches a folder that holds other files (e.g. a git checkout)' { if (@(Get-ChildItem $dev).Count -ne 5) { throw "files now: $(@(Get-ChildItem $dev).Name -join ', ')" } }
+    }
+    finally { $env:ProgramData = $oldPD; Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 Write-Host 'State and leftovers'
 . (Load 'Fits-Ver', 'Spi-Blocked', 'Fits', 'Is-Leftover', 'Get-StateEx')
 $OtherUser = $false

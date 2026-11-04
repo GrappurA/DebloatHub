@@ -6,8 +6,11 @@
   <a href="https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.zip"><img src="https://img.shields.io/badge/Download-DebloatHub.zip-2ea44f?style=for-the-badge&logo=windows&logoColor=white" alt="Download DebloatHub.zip" height="42"></a>
 </p>
 
-<p align="center">or paste into PowerShell: <code>irm https://grappura.github.io/DebloatHub/install.ps1 | iex</code>
-</p>
+<p align="center">or paste this into PowerShell (copy button on the right of the box):</p>
+
+```powershell
+irm https://grappura.github.io/DebloatHub/install.ps1 | iex
+```
 
 <p align="center">
   <a href="https://github.com/GrappurA/DebloatHub/releases/latest"><img src="https://img.shields.io/github/v/release/GrappurA/DebloatHub?label=latest&color=4CC2FF" alt="Latest release"></a>
@@ -58,7 +61,7 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 - **Safety net.** Optional restore point before applying, a Dry run mode that only previews, and a confirmation that lists one-time actions and risky items.
 - **Progress and time left.** While changes are applied, a progress bar shows the step, the percentage done and an estimate of the time left (in both views).
 - **Recommended preset.** A curated list marked with a *Recommended* badge: performance and privacy tweaks, hidden taskbar search, bloat apps removed (only Teams and the default Media Player and Movies & TV players are kept), bloat services set to start on demand (Xbox, Phone Link, Fax, Remote Registry, IP Helper, diagnostics), every non-essential startup app off (classic and Microsoft Store apps), and the gaming basics: Game Mode, windowed-game optimizations, raw mouse input, no Game Bar, Game DVR or Sticky Keys pop-ups. Drivers, audio, touchpad, GPU, printers, security, sync, VPN, remote access, databases and G-Helper stay on. Everything except the removed apps can be undone with one click.
-- **Maximum preset.** Everything in Recommended, plus the bigger RAM and process savings, marked with a *Maximum* badge: services grouped into fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed and opens normally), non-essential third-party auto-start services set to Manual, Error Reporting, the AI Fabric service and (Windows 10) the Ndu driver off. Deliberately left alone so nothing essential breaks: Night light (Connected Devices Platform), Snipping Tool, printing and Print to PDF, Bluetooth, Windows Hello, Windows Search, Remote Desktop, background-app notifications, Memory Integrity and thumbnails. All of it can be undone with one click.
+- **Maximum preset.** Everything in Recommended, plus the bigger RAM and process savings, marked with a *Maximum* badge: services grouped into fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed and opens normally), non-essential third-party auto-start services set to Manual, third-party scheduled tasks that are not updaters or backups off, Error Reporting, the AI Fabric service and (Windows 10) the Ndu driver off, hardware-accelerated GPU scheduling on, no automatic restarts while you are signed in, no OneDrive ads in Explorer, no Task View, People or Meet Now buttons, Chrome no longer running after you close it, no VS Code npm lookups and no handwriting or typing samples collected. Deliberately left alone so nothing essential breaks: Night light (Connected Devices Platform), Snipping Tool, printing and Print to PDF, Bluetooth, Windows Hello, Windows Search, Remote Desktop, background-app notifications, Memory Integrity and thumbnails. All of it can be undone with one click.
 - **Other presets.** *Privacy* and *Gaming* also only move switches; nothing happens until you press Apply. They never pre-select **Advanced** items (such as turning off Memory Integrity) or anything that cannot be undone (app removals); the log lists those so you can decide yourself. On laptops, *Gaming* also skips the Ultimate Performance plan. *Reset* returns every switch to the current system state.
 - **Visual Effects presets.** *Maximize looks*, *Recommended* and *Maximize performance* set the switches; after Apply, the effects change instantly, without a sign-out.
 - **Save and load your selection** as a JSON file (you choose where) to reuse on other PCs, also unattended from the command line.
@@ -182,6 +185,7 @@ The same engine runs without a window, for example to set up several PCs the sam
 .\DebloatHub.ps1 -Preset Debloat                 # same as the Simple view's Debloat button
 .\DebloatHub.ps1 -Preset Maximum                 # same as the Simple view's Maximum button
 .\DebloatHub.ps1 -Preset Undo                    # put back everything DebloatHub changed
+.\DebloatHub.ps1 -Uninstall                      # remove DebloatHub itself (its changes stay)
 .\DebloatHub.ps1 -Selection .\my-selection.json  # a file saved with "Save selection"
 ```
 
@@ -236,11 +240,7 @@ Run the tests before opening a pull request: `powershell -File tests\Test-Debloa
 | `DebloatHub-selection.json` | Your saved selection (Desktop by default; you choose the place) |
 | `%TEMP%\DebloatHub-error.log` | Startup error details |
 
-To remove DebloatHub completely:
-
-1. Switch off everything you want restored and press Apply.
-2. Delete the script.
-3. Optionally delete `HKLM\SOFTWARE\DebloatHub` and `%ProgramData%\DebloatHub`. After that, undo can only use Windows' defaults.
+**To remove DebloatHub,** click **Remove DebloatHub** (Advanced view, next to *Load selection*, or the link at the bottom of the Simple view). If DebloatHub's changes are still applied, it asks first: *Yes* undoes them and then removes DebloatHub, *No* keeps them and removes only DebloatHub. It deletes everything in this table except your saved selection files and `.debloathub.bak` backups, and it deletes the folder it was started from only when that folder holds nothing but the zip's files. Without a window: `.\DebloatHub.ps1 -Uninstall` (keeps the changes; run `-Preset Undo` first to revert them).
 
 ## FAQ
 

@@ -4,11 +4,13 @@
 param([switch]$Elevated,[switch]$ShowConsole,[switch]$NoShow,   # -NoShow: build everything but do not open the window (automated tests dot-source the script with it)
  # Unattended mode (no window): -Preset Debloat|Maximum|Undo (Gaming = Debloat, kept for old scripts), or -Selection <file saved with "Save selection">. Add -DryRun to preview, -NoRestorePoint to skip the restore point.
  [ValidateSet('Debloat','Maximum','Gaming','Undo')][string]$Preset,[string]$Selection,[switch]$DryRun,[switch]$NoRestorePoint,
+ # -Uninstall: removes DebloatHub itself (program files, logs, settings, undo records). Changes it made stay; run -Preset Undo first to revert them.
+ [switch]$Uninstall,
  # -Screenshot <folder>: renders the Advanced and Simple views to PNG files after the first scan, then closes (used by CI to refresh the README screenshots)
  [string]$Screenshot)
-$AppVersion='1.3.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$AppVersion='1.4.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
 $MyPath=$PSCommandPath
-$Headless=[bool]($Preset -or $Selection)
+$Headless=[bool]($Preset -or $Selection -or $Uninstall)
 if($Selection){$Selection=[IO.Path]::GetFullPath($Selection)}   # the elevated copy may start in another folder
 $isAdmin=(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 # 32-bit PowerShell on 64-bit Windows sees a redirected registry (WOW6432Node): policies would be written where Windows never reads them,
@@ -18,7 +20,7 @@ $PSExe=if($Wow){"$env:SystemRoot\Sysnative\WindowsPowerShell\v1.0\powershell.exe
 function Get-RelaunchArgs{
  $x="-NoProfile $(if($ShowConsole -or $Headless){'-NoExit '})-ExecutionPolicy Bypass -File `"$MyPath`" -Elevated"
  if($ShowConsole){$x+=' -ShowConsole'};if($Preset){$x+=" -Preset $Preset"};if($Selection){$x+=" -Selection `"$Selection`""}
- if($DryRun){$x+=' -DryRun'};if($NoRestorePoint){$x+=' -NoRestorePoint'};$x}
+ if($DryRun){$x+=' -DryRun'};if($NoRestorePoint){$x+=' -NoRestorePoint'};if($Uninstall){$x+=' -Uninstall'};$x}
 if($Wow -or (-not $isAdmin -and -not $Elevated)){
   # Normal run: console hidden. Add -ShowConsole to keep the console visible for troubleshooting.
   $spa=@{FilePath=$PSExe;WindowStyle=$(if($ShowConsole -or $Headless){'Normal'}else{'Hidden'});ArgumentList=(Get-RelaunchArgs)}
@@ -742,10 +744,17 @@ function Is-RecT($t){($RECOMMENDED -contains $t.Name) -or @($RECOMMENDED|Where-O
 # Kept working on purpose: Night light (CDPSvc), Snipping Tool, printing and Print to PDF, Bluetooth, Windows Hello, Windows Search and indexing,
 # Remote Desktop, background-app notifications (Teams, Alarms), Memory Integrity, thumbnails, Teams itself and Calculator/Camera/Alarms/Sticky Notes/players.
 # On top of Recommended: fewer svchost processes, Teams and every other non-essential startup entry off, non-essential third-party
-# auto-start services to Manual (Autoruns "Service:" items without the Advanced badge), Error Reporting, AI Fabric and the Ndu driver off.
-$MAXIMUM=@('Group services into fewer svchost processes','Disable Windows Error Reporting','Disable AI Fabric service','Disable Network Data Usage monitor (Ndu driver)','APP:Microsoft.Office.OneNote')
+# auto-start services to Manual (Autoruns "Service:" items without the Advanced badge), third-party scheduled tasks that are not updaters
+# or backups off, Error Reporting, AI Fabric and the Ndu driver off, plus the portable parts of a tuned real-world setup (v1.4.0).
+$MAXIMUM=@('Group services into fewer svchost processes','Disable Windows Error Reporting','Disable AI Fabric service','Disable Network Data Usage monitor (Ndu driver)','APP:Microsoft.Office.OneNote'
+ 'Turn on hardware-accelerated GPU scheduling','No auto-restart while signed in','Disable OneDrive and sync-provider ads in Explorer'
+ 'Hide Task View button','Hide People Bar (Windows 10)','Hide Meet Now icon (Windows 10)'
+ 'Chrome: harden browsing (no third-party cookies, no prediction, no background mode)|BackgroundModeEnabled'
+ 'VS Code: stop background lookups (npm, JSON schemas, type downloads)|npm.fetchOnlinePackageInfo'
+ 'Turn off online speech recognition & inking/typing data|RestrictImplicitInkCollection','Turn off online speech recognition & inking/typing data|RestrictImplicitTextCollection')
+$MAX_TASK_KEEP='(?i)update|upgrade|maintenance|patch|backup|sync|licen[cs]e'   # third-party tasks Maximum leaves on: they keep software patched or data safe
 $MAX_KEEP=$ESSENTIAL -replace '\|teams\|','|'   # Teams no longer launches at sign-in; it stays installed and opens normally
-function Is-MaxAct($a,$t){($a.K -eq 'App' -and ($MAXIMUM -contains "APP:$($a.N)")) -or ((Is-StartupT $t) -and $t.Risk -ne 'Advanced' -and "$($t.Name) $($t.Desc)" -notmatch $MAX_KEEP) -or ("$($t.Name)".StartsWith('Service: ',[StringComparison]::Ordinal) -and $t.Risk -eq 'Moderate')}
+function Is-MaxAct($a,$t){($a.K -eq 'App' -and ($MAXIMUM -contains "APP:$($a.N)")) -or ((Is-StartupT $t) -and $t.Risk -ne 'Advanced' -and "$($t.Name) $($t.Desc)" -notmatch $MAX_KEEP) -or ("$($t.Name)".StartsWith('Service: ',[StringComparison]::Ordinal) -and $t.Risk -eq 'Moderate') -or ("$($t.Name)".StartsWith('Task: ',[StringComparison]::Ordinal) -and $t.Risk -eq 'Safe' -and "$($t.Name) $($t.Desc)" -notmatch $MAX_TASK_KEEP)}
 function Is-Max($u){(Is-Rec $u) -or ($MAXIMUM -contains $u.T.Name) -or ($MAXIMUM -contains $u.Key) -or (@($u.Acts).Count -eq 1 -and (Is-MaxAct @($u.Acts)[0] $u.T))}
 function Is-MaxT($t){($MAXIMUM -contains $t.Name) -or @($t.Acts|Where-Object{Is-MaxAct $_ $t}).Count}
 
@@ -1159,10 +1168,15 @@ function Run{
  if($nr.Count){$ic='Warning';$msg+="`n`nNo recorded original for:`n - "+($nr -join "`n - ")+"`nThese were already applied before DebloatHub recorded anything (or by another tool), so undo sets Windows' documented default instead."}
  $wn=@($add|ForEach-Object{$_.T.Name}|Select-Object -Unique|Where-Object{$warnBy.ContainsKey($_)})
  if($wn.Count){$ic='Warning';$msg+="`n`nRead before continuing:";foreach($n in $wn){$msg+="`n - $($n): $($warnBy[$n])"}}
- if(-not $dry -and [Windows.MessageBox]::Show($msg,'DebloatHub','YesNo',$ic) -ne 'Yes'){return}
+ $ask=-not $script:noAsk;$script:noAsk=$false                                     # the uninstall flow already asked
+ if(-not $dry -and $ask -and [Windows.MessageBox]::Show($msg,'DebloatHub','YesNo',$ic) -ne 'Yes'){return}
  $items=Build-Items $add $rem
  $rp=[bool](-not $dry -and $add.Count -and $chkRP.IsChecked)
- Start-Bg 'Applying changes...' @{items=$items;dry=$dry;rp=$rp} $APPLYCODE {param($r);Show-ApplyResult $r;Scan}}
+ Start-Bg 'Applying changes...' @{items=$items;dry=$dry;rp=$rp} $APPLYCODE {param($r);Show-ApplyResult $r
+  if($script:removeAfter){$script:removeAfter=$false   # "undo first, then remove DebloatHub"
+   if(@($r.Failed).Count -and [Windows.MessageBox]::Show("$(@($r.Failed).Count) change(s) could not be undone (see the log). Remove DebloatHub anyway?",'Remove DebloatHub','YesNo','Warning') -ne 'Yes'){Scan;return}
+   Remove-DebloatHub}
+  else{Scan}}}
 
 function Build-Items($add,$rem){$items=@();foreach($set in @(@('REVERT',$rem,$true),@('APPLY',$add,$false))){foreach($u in $set[1]){$items+=,@{Label="[$($set[0])] $($u.Key -replace '\|',' > ')";Acts=@($u.Acts|ForEach-Object{Copy-Act $_});Undo=$set[2]}}};,$items}
 function Invoke-Now($t,$undo){                  # runs ONE tweak right away through the normal apply engine (idempotent, verified, snapshot-based)
@@ -1510,7 +1524,7 @@ $xaml=@'
    <WrapPanel><CheckBox x:Name="chkRP" Style="{StaticResource Sw}" Content="Restore point first" IsChecked="True" Margin="0,0,22,6"/>
     <CheckBox x:Name="chkDry" Style="{StaticResource Sw}" Content="Dry run (preview only)" Margin="0,0,26,6"/>
     <Button x:Name="bApply" Content="No changes" IsEnabled="False" Style="{StaticResource Btn}" Background="#4CC2FF" Foreground="#0B0B0B" FontWeight="SemiBold"/>
-    <Button x:Name="bExp" Content="Save selection" Style="{StaticResource Btn}"/><Button x:Name="bImp" Content="Load selection" Style="{StaticResource Btn}"/></WrapPanel>
+    <Button x:Name="bExp" Content="Save selection" Style="{StaticResource Btn}"/><Button x:Name="bImp" Content="Load selection" Style="{StaticResource Btn}"/><Button x:Name="bRemove" Content="Remove DebloatHub" Style="{StaticResource Btn}"/></WrapPanel>
    <Border CornerRadius="6" Background="#1A1A1A"><TextBox x:Name="log" Height="96" IsReadOnly="True" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Background="Transparent" Foreground="#CFCFCF" BorderThickness="0" Padding="8"/></Border></StackPanel></Border>
  </Grid>
  <Border x:Name="ld" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,44,30" Background="#2B2B2B" BorderBrush="#4CC2FF" BorderThickness="1" CornerRadius="18" Padding="12,7,16,7">
@@ -1559,6 +1573,7 @@ $xaml=@'
    <WrapPanel Grid.Row="3" Margin="8,14,0,10">
     <CheckBox x:Name="sRP" Style="{StaticResource Sw}" Content="Create a restore point first" IsChecked="True" Margin="0,0,24,6"/>
     <TextBlock x:Name="lnkShow" Text="Show me exactly what changes" Foreground="#4CC2FF" Cursor="Hand" VerticalAlignment="Center" Margin="0,0,24,6" TextDecorations="Underline"/>
+    <TextBlock x:Name="lnkRemove" Text="Remove DebloatHub" Foreground="#9E9E9E" Cursor="Hand" VerticalAlignment="Center" Margin="0,0,24,6" TextDecorations="Underline"/>
     <Button x:Name="bReboot" Content="Restart now to finish" Style="{StaticResource Btn}" Background="#4CC2FF" Foreground="#0B0B0B" FontWeight="SemiBold" Visibility="Collapsed"/>
    </WrapPanel>
    <Border Grid.Row="4" CornerRadius="10" Background="#151515"><TextBox x:Name="slog" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Background="Transparent" Foreground="#A8A8A8" BorderThickness="0" Padding="12"/></Border>
@@ -1568,7 +1583,7 @@ $xaml=@'
 '@
 $w=[Windows.Markup.XamlReader]::Parse($xaml)
 $w.Title="DebloatHub v$AppVersion"
-'info','sum','nav','txt','pnl','log','ld','ldText','ldBar','sBar','chkRP','chkDry','bScan','pSafe','pMax','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bMax','bUndo','tRec','tMax','tUndo','sRP','lnkShow','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
+'info','sum','nav','txt','pnl','log','ld','ldText','ldBar','sBar','chkRP','chkDry','bScan','pSafe','pMax','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bMax','bUndo','tRec','tMax','tUndo','sRP','lnkShow','lnkRemove','bRemove','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
 $pSafe.ToolTip='Recommended: performance and privacy tweaks, bloat-app removal (only Teams and the Media Player / Movies & TV players are kept), bloat services set to start on demand, non-essential startup apps off, and the gaming basics (raw mouse input, no Game Bar or Sticky Keys pop-ups). Everything except the removed apps can be undone with one click. Tweaks in this preset carry a "Recommended" badge.'
 $pMax.ToolTip='Maximum: everything in Recommended, plus fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed), non-essential third-party auto-start services set to Manual, Error Reporting, AI Fabric and the Ndu driver off. Night light, Snipping Tool, printing, Bluetooth, Windows Hello and search keep working. Extra tweaks carry a "Maximum" badge; all of them can be undone.'
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
@@ -1756,9 +1771,39 @@ $bToSimple.Add_Click({Save-UiMode 'Simple';Show-View 'simple'})
 $bRec.Add_Click({Simple-Run 'rec'});$bMax.Add_Click({Simple-Run 'max'});$bUndo.Add_Click({Simple-Run 'undo'})
 $lnkShow.Add_MouseLeftButtonUp({if($script:busy){return};Pick 'recommended';Show-View 'advanced';$nav.SelectedIndex=0})   # the blue bars show every pending change
 $bReboot.Add_Click({if([Windows.MessageBox]::Show('Restart the PC now? Save your work in other apps first.','DebloatHub','YesNo','Question') -eq 'Yes'){Start-Process shutdown.exe -ArgumentList '/r /t 5'}})
+# ---------- Remove DebloatHub (one click; offers to undo its changes first) ----------
+function Remove-DebloatHub{   # deletes only DebloatHub's own things: undo records and settings, logs, the installed copy and an unchanged zip folder
+ $done=@();$left=@()
+ foreach($k in @('HKLM:\SOFTWARE\DebloatHub',(Map-Hive 'HKCU:\SOFTWARE\DebloatHub'))){if(Test-Path -LiteralPath $k){try{Remove-Item -LiteralPath $k -Recurse -Force -ErrorAction Stop;$done+=$k}catch{$left+=$k}}}
+ $script:LogFile=$null                                    # stop writing the log before its folder goes
+ $dirs=@((Join-Path $env:ProgramData 'DebloatHub'),(Join-Path $UserLocal 'DebloatHub'))
+ $here=Split-Path -Parent $MyPath;$zipFiles='DebloatHub.ps1','Start DebloatHub.bat','README.txt','LICENSE'
+ if($here -and (Test-Path -LiteralPath $here) -and $dirs -notcontains $here -and -not @(Get-ChildItem -LiteralPath $here -Force -ErrorAction SilentlyContinue|Where-Object{$zipFiles -notcontains $_.Name}).Count){$dirs+=$here}   # the extracted zip, only when it holds nothing else
+ try{Set-Location -LiteralPath $env:SystemRoot;[Environment]::CurrentDirectory=$env:SystemRoot}catch{}   # a folder that is the current directory cannot be deleted
+ foreach($d in $dirs){if(-not(Test-Path -LiteralPath $d)){continue}
+  try{[void](Clear-Folder $d);Remove-Item -LiteralPath $d -Force -ErrorAction Stop;$done+=$d}
+  catch{$left+=$d;try{Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList "/c timeout /t 3 /nobreak >nul & rd /s /q `"$d`"" -WindowStyle Hidden}catch{}}}   # still in use: delete it a moment after DebloatHub closes
+ $msg="DebloatHub has been removed from this PC.$(if($left.Count){"`n`nFinishing in a few seconds: $($left -join ', ')"})$(if($here -and $dirs -notcontains $here){"`n`nThe folder you started it from was left alone because it contains other files: $here"})$(if($script:needReboot){"`n`nRestart your PC to finish undoing the changes."})"
+ if($Headless){Write-Host $msg;return}
+ [void][Windows.MessageBox]::Show($msg,'DebloatHub','OK','Information');$w.Close()}
+function Uninstall-Click{
+ if($script:busy){return}
+ if(-not $script:scanned){[void][Windows.MessageBox]::Show('Wait until the scan has finished, then try again.','Remove DebloatHub');return}
+ $n=@(Undo-Units).Count
+ if($n){$a=[Windows.MessageBox]::Show("DebloatHub changed $n setting(s) on this PC that can still be undone.`n`nYes: undo them first, then remove DebloatHub.`nNo: keep the changes and remove DebloatHub. Its undo records are deleted, so DebloatHub can no longer undo them.`nCancel: do nothing.",'Remove DebloatHub','YesNoCancel','Question')
+  if("$a" -eq 'Cancel'){return}
+  if("$a" -eq 'Yes'){$script:removeAfter=$true;$script:noAsk=$true;Simple-Run 'undo'
+   if(-not $script:busy){$script:removeAfter=$false;$script:noAsk=$false;Remove-DebloatHub}   # nothing to run after all
+   return}}
+ elseif([Windows.MessageBox]::Show("Remove DebloatHub from this PC?`n`nThis deletes its program files, logs and settings. Nothing else on the PC changes.",'Remove DebloatHub','YesNo','Question') -ne 'Yes'){return}
+ Remove-DebloatHub}
+$script:removeAfter=$false;$script:noAsk=$false
+$bRemove.Add_Click({Uninstall-Click});$lnkRemove.Add_MouseLeftButtonUp({Uninstall-Click})
+$bRemove.ToolTip='Deletes DebloatHub itself: its undo records, settings, logs and the downloaded copy. You can undo its changes first.'
 # ---------- Unattended mode: -Preset Debloat|Maximum|Undo or -Selection <file>; same engine, no window ----------
 function Invoke-Headless{
  $script:HeadlessExit=0
+ if($Uninstall){Log "DebloatHub v$AppVersion - removing DebloatHub from this PC (changes it made stay; use -Preset Undo first to revert them)";Remove-DebloatHub;return}
  Log "DebloatHub v$AppVersion - unattended mode: $(if($Selection){"selection $Selection"}else{"preset $Preset"})$(if($DryRun){' (dry run, nothing is changed)'})"
  if($LogFile){Log "Log file: $LogFile"}
  Warn-OtherUser;Show-EditionNote;Log 'Scanning this PC...'

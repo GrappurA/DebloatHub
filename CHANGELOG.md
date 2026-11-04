@@ -2,6 +2,15 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-11-04
+
+### Added
+- **Remove DebloatHub in one click** (Advanced view next to *Load selection*, and a link at the bottom of the Simple view). If DebloatHub's changes are still applied it asks first: undo them and then remove, or keep them and remove only DebloatHub. It deletes its undo records and settings (`HKLM`/`HKCU\SOFTWARE\DebloatHub`), its logs, the copy installed by the one-liner, and the extracted zip folder when that folder holds nothing else. Unattended: `-Uninstall`.
+- The one-line install command at the top of the README is now a code box with GitHub's copy button.
+
+### Changed
+- **Maximum** now also includes the portable parts of a tuned real-world setup: hardware-accelerated GPU scheduling on, no automatic restart while signed in, no OneDrive ads in Explorer, no Task View / People / Meet Now buttons, Chrome no longer running in the background after you close it, no VS Code npm lookups, no handwriting and typing samples collected, and third-party scheduled tasks off unless they update, patch, back up, sync or license software. Hardware-specific items (ASUS services for G-Helper) and changes that can break things for some people (location off, OneDrive uninstall, third-party cookie blocking, Fast Startup, SysMain, memory compression, drivers from Windows Update, Xbox cloud saves, SMB 1 removal) stay opt-in in the Advanced view.
+
 ## [1.3.0] - 2026-11-04
 
 ### Changed

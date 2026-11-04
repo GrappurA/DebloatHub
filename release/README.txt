@@ -55,11 +55,10 @@ in the registry, so tweaks applied with an older version can still be undone.
 
 UNINSTALLING
 ------------
-1. Switch OFF every tweak you want restored and press Apply.
-2. Delete the DebloatHub folder.
-3. Optional: delete the registry key HKEY_LOCAL_MACHINE\SOFTWARE\DebloatHub
-   and the folder %ProgramData%\DebloatHub
-   (after that, undo can only use Windows defaults).
+Click "Remove DebloatHub" (Advanced view, or the link at the bottom of the
+Simple view). It offers to undo DebloatHub's changes first, then deletes its
+files, logs, settings and undo records, and this folder if it holds nothing
+else.
 
 COMMAND LINE (NO WINDOW)
 ------------------------

@@ -119,6 +119,7 @@ $nav.SelectedIndex=[array]::IndexOf($secs,$sSvc)+1;Refresh-View;if(DhtPng '5-bac
 $nav.SelectedIndex=0;Refresh-View
 DhtCheck 'Screenshots rendered' ($shots.Count -eq 5) ($shots -join ', ')
 DhtCheck 'Simple view counts' ($tRec.Text -and $tMax.Text -and $tUndo.Text) "Debloat: '$($tRec.Text)', Maximum: '$($tMax.Text)', Undo: '$($tUndo.Text)'"
+DhtCheck 'Remove DebloatHub is offered in both views' ([bool]$bRemove -and [bool]$lnkRemove -and [bool](Get-Command Remove-DebloatHub -ErrorAction SilentlyContinue)) ''
 
 # ---------------- 7) apply -> verify -> undo round trip ----------------
 $kinds='Reg','Svc','SvcM','Task','Startup'
