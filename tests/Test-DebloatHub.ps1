@@ -43,7 +43,7 @@ Check 'every Recommended entry names an existing tweak (or, for APP:<package>, a
     $miss = @(StringsIn $assign['$RECOMMENDED'].Right | Where-Object { if ($_ -like 'APP:*') { -not $appNames.ContainsKey($_.Substring(4)) } else { -not $tweakNames.ContainsKey(($_ -split '\|')[0]) } }); if ($miss.Count) { throw "unknown: $($miss -join ', ')" } }
 Check 'every Maximum entry names an existing tweak (or an app package)' {
     $miss = @(StringsIn $assign['$MAXIMUM'].Right | Where-Object { if ($_ -like 'APP:*') { -not $appNames.ContainsKey($_.Substring(4)) } else { -not $tweakNames.ContainsKey(($_ -split '\|')[0]) } }); if ($miss.Count) { throw "unknown: $($miss -join ', ')" } }
-Check 'Maximum never touches what must keep working (Night light, Snipping Tool, printing, Bluetooth, search, background apps)' {
+Check 'no preset includes a switch with a known side effect on Windows features (they stay opt-in)' {
     $bad = 'Connected Devices Platform|Printing & scanning services$|Bluetooth|Windows Hello|Search indexing|Block apps from running in the background|Memory Integrity|ScreenSketch|Remote Desktop & Remote Registry \(incoming\)$|SysMain'
     $hit = @((StringsIn $assign['$MAXIMUM'].Right) + (StringsIn $assign['$RECOMMENDED'].Right) | Where-Object { $_ -match $bad }); if ($hit.Count) { throw "in a preset: $($hit -join ', ')" }
 }
@@ -168,6 +168,22 @@ Write-Host 'Remove DebloatHub'
         Check 'never touches a folder that holds other files (e.g. a git checkout)' { if (@(Get-ChildItem $dev).Count -ne 5) { throw "files now: $(@(Get-ChildItem $dev).Name -join ', ')" } }
     }
     finally { $env:ProgramData = $oldPD; Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Write-Host 'Entries turned off with Sysinternals Autoruns'
+& {
+    . (Load 'Move-StartupFile', 'Test-Act', 'Act-Absent', 'Do-Act', 'Task-Path')
+    function Log($m) {}
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ("dht-ar-" + [guid]::NewGuid().ToString('N')); $dis = Join-Path $tmp 'AutorunsDisabled'; $null = New-Item -ItemType Directory -Force $dis
+    Set-Content (Join-Path $dis 'Tool.lnk') 'x'
+    $a = @{ K = 'ArFile'; P = $tmp; N = 'Tool.lnk' }
+    try {
+        Check 'a file Autoruns moved away counts as turned off' { Eq (Test-Act $a) $true 'Test-Act' }
+        Check 'switching it back on moves it back to the Startup folder' { Do-Act $a $true; if (-not (Test-Path (Join-Path $tmp 'Tool.lnk'))) { throw 'not moved back' }; Eq (Test-Act $a) $false 'Test-Act' }
+        Check 'turning it off again moves it into AutorunsDisabled, as Autoruns does' { Do-Act $a $false; if (-not (Test-Path (Join-Path $dis 'Tool.lnk'))) { throw 'not moved' }; Eq (Test-Act $a) $true 'Test-Act' }
+        Check 'a startup file that is gone from both places is "not present"' { Remove-Item (Join-Path $dis 'Tool.lnk'); Eq (Act-Absent $a) $true 'Act-Absent' }
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 Write-Host 'State and leftovers'

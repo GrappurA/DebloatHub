@@ -120,6 +120,16 @@ $nav.SelectedIndex=0;Refresh-View
 DhtCheck 'Screenshots rendered' ($shots.Count -eq 5) ($shots -join ', ')
 DhtCheck 'Simple view counts' ($tRec.Text -and $tMax.Text -and $tUndo.Text) "Debloat: '$($tRec.Text)', Maximum: '$($tMax.Text)', Undo: '$($tUndo.Text)'"
 DhtCheck 'Remove DebloatHub is offered in both views' ([bool]$bRemove -and [bool]$lnkRemove -and [bool](Get-Command Remove-DebloatHub -ErrorAction SilentlyContinue)) ''
+# a Run entry turned off with Sysinternals Autoruns (moved into Run\AutorunsDisabled) is detected, re-enabled and turned off again with its exact data
+$arK='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run';$arD="$arK\AutorunsDisabled";$arOk=$false;$arMsg=''
+try{if(-not(Test-Path $arD)){New-Item $arD -Force|Out-Null};New-ItemProperty $arD -Name 'DhtAutorunsTest' -Value '"%SystemRoot%\notepad.exe" /x' -PropertyType ExpandString -Force|Out-Null
+ $arA=@{K='ArRun';P=$arK;N='DhtAutorunsTest'};$t1=Test-Act $arA;Do-Act $arA $true;$t2=Test-Act $arA
+ $kind=(Get-Item $arK).GetValueKind('DhtAutorunsTest');$raw=(Get-Item $arK).GetValue('DhtAutorunsTest',$null,'DoNotExpandEnvironmentNames')
+ Do-Act $arA $false;$t3=Test-Act $arA
+ $arOk=($t1 -eq $true -and $t2 -eq $false -and $t3 -eq $true -and "$kind" -eq 'ExpandString' -and $raw -eq '"%SystemRoot%\notepad.exe" /x');$arMsg="off=$t1 on=$t2 off-again=$t3 kind=$kind data=$raw"}
+catch{$arMsg=$_.Exception.Message}
+finally{Remove-ItemProperty $arD -Name 'DhtAutorunsTest' -ErrorAction SilentlyContinue;Remove-ItemProperty $arK -Name 'DhtAutorunsTest' -ErrorAction SilentlyContinue}
+DhtCheck 'Autoruns-disabled startup entries round-trip' $arOk $arMsg
 
 # ---------------- 7) apply -> verify -> undo round trip ----------------
 $kinds='Reg','Svc','SvcM','Task','Startup'

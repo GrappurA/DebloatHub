@@ -8,7 +8,7 @@ param([switch]$Elevated,[switch]$ShowConsole,[switch]$NoShow,   # -NoShow: build
  [switch]$Uninstall,
  # -Screenshot <folder>: renders the Advanced and Simple views to PNG files after the first scan, then closes (used by CI to refresh the README screenshots)
  [string]$Screenshot)
-$AppVersion='1.4.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$AppVersion='1.5.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
 $MyPath=$PSCommandPath
 $Headless=[bool]($Preset -or $Selection -or $Uninstall)
 if($Selection){$Selection=[IO.Path]::GetFullPath($Selection)}   # the elevated copy may start in another folder
@@ -304,6 +304,17 @@ $seenN=@{}
 foreach($e in $su){$nm="Disable at startup: $($e.N)";if($seenN.ContainsKey($nm)){$base="$nm ($(if($e.A -like 'HKLM*'){'all users'}else{'this user'}) copy)";$nm=$base;$c=2;while($seenN.ContainsKey($nm)){$nm="$base $c";$c++}};$seenN[$nm]=1
  $rk2=if($e.N -match 'Security|Defender|Antivirus|Norton|McAfee|Kaspersky|Bitdefender|Avast|ESET'){'Advanced'}elseif($e.N -match 'Realtek|Audio|NVIDIA|Intel|AMD|Synaptics|Touchpad|Bluetooth'){'Moderate'}else{'Safe'}
  $db+=fTw $s15 $nm "Launches at sign-in: $($e.C)" $rk2 $sd Any '' @(@{K='Startup';A=(Map-Hive $e.A);N=$e.N}) 'Disabling only stops it launching at sign-in; the app still works when you open it. The same list is in Task Manager > Startup apps.'
+ $more[$nm]=@('Only if you need this app running right after sign-in (chat, sync, tray tools, hardware utilities).','Faster sign-in and less RAM used in the background.','The app will not start by itself: no tray icon, notifications or sync until you open it.')}
+# Entries turned off with Sysinternals Autoruns: it moves them into an "AutorunsDisabled" subkey / subfolder, so Task Manager no longer lists them.
+# They are shown as turned off; switching one back on moves it back, exactly as Autoruns does.
+$arRun=@('HKCU:\Software\Microsoft\Windows\CurrentVersion\Run','HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run')
+$arDis=@()
+foreach($rk in $arRun){$dk=Map-Hive "$rk\AutorunsDisabled";if(Test-Path -LiteralPath $dk){$k=Get-Item -LiteralPath $dk;foreach($vn in $k.GetValueNames()){if($vn){$arDis+=,@{N=$vn;C="$($k.GetValue($vn))";A=@{K='ArRun';P=(Map-Hive $rk);N=$vn};W=$(if($rk -like 'HKLM*'){'all users'}else{'this user'})}}}}}
+foreach($fd in @("$UserAppData\Microsoft\Windows\Start Menu\Programs\Startup","$env:ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp")){$dd=Join-Path $fd 'AutorunsDisabled'
+ if(Test-Path -LiteralPath $dd){foreach($f in @(Get-ChildItem -LiteralPath $dd -File -ErrorAction SilentlyContinue|Where-Object{$_.Name -ne 'desktop.ini'})){$arDis+=,@{N=$f.Name;C=$f.FullName;A=@{K='ArFile';P=$fd;N=$f.Name};W=$(if($fd -like "$env:ProgramData*"){'all users'}else{'this user'})}}}}
+foreach($e in $arDis){$nm="Disable at startup: $($e.N)";if($seenN.ContainsKey($nm)){$nm="$nm ($($e.W), turned off in Autoruns)"};if($seenN.ContainsKey($nm)){continue};$seenN[$nm]=1
+ $rk2=if($e.N -match 'Security|Defender|Antivirus|Norton|McAfee|Kaspersky|Bitdefender|Avast|ESET'){'Advanced'}elseif($e.N -match 'Realtek|Audio|NVIDIA|Intel|AMD|Synaptics|Touchpad|Bluetooth'){'Moderate'}else{'Safe'}
+ $db+=fTw $s15 $nm "Launches at sign-in: $($e.C) (turned off with Sysinternals Autoruns)" $rk2 $sd Any '' @($e.A) 'Turned off with Sysinternals Autoruns. Switching it back on moves the entry back to where Autoruns took it from.'
  $more[$nm]=@('Only if you need this app running right after sign-in (chat, sync, tray tools, hardware utilities).','Faster sign-in and less RAM used in the background.','The app will not start by itself: no tray icon, notifications or sync until you open it.')}
 # Microsoft Store apps (new Teams, Spotify, WhatsApp, Phone Link...) register their own startup tasks; Task Manager > Startup apps lists them too.
 # Their switch is the State value: 2 = enabled, 1 = turned off by the user (0 = never enabled, 3/4 = set by policy: not offered).
@@ -648,16 +659,17 @@ SvcGroup -Fixed 'Third-party updaters & helpers: start on demand' 'Sets backgrou
 # Disable only, always undoable: tasks are disabled (not deleted); services go to Manual (Strict mode: Disabled).
 # "Essential" = drivers (anything in DriverStore/System32), audio, touchpad, GPU, peripherals, printers/scanners, security, sync, VPN, password managers,
 # remote access, databases/containers/VMs/servers, backup, anti-cheat, fan/RGB control, G-Helper, Teams.
-$ESSENTIAL='(?i)driverstore|\\system32\\|realtek|\brtk|rthdvcpl|audio|sound|nahimic|dolby|waves|\bsonic|synaptics|\belan|etdctrl|touchpad|nvidia|\bamd|radeon|\bintel|igfx|graphics|bluetooth|security|defender|antivirus|norton|mcafee|kaspersky|bitdefender|avast|\bavg\b|\beset|malwarebytes|g-?helper|teams|onedrive|dropbox|google ?drive|icloud|bitwarden|1password|keepass|vpn|wireguard|logitech|lghub|razer|corsair|steelseries|wacom|teamviewer|anydesk|rustdesk|parsec|sunshine|\basus|armoury|lenovo|\bhp\b|\bdell|\bacer|\bmsi\b|print|\bscan|epson|canon|brother|xerox|kyocera|ricoh|lexmark|sql|mongo|postgres|redis|mariadb|docker|vmware|virtualbox|vbox|hyper-v|apache|nginx|tomcat|jenkins|plex|jellyfin|backup|veeam|acronis|macrium|anti-?cheat|battleye|vanguard|\bvgc\b|faceit|openrgb|signalrgb|fan ?control'
+$ESSENTIAL='(?i)driverstore|\\system32\\|realtek|\brtk|rthdvcpl|audio|sound|nahimic|dolby|waves|\bsonic|synaptics|\belan|etdctrl|touchpad|nvidia|\bamd|radeon|\bintel|igfx|graphics|bluetooth|security|defender|antivirus|norton|mcafee|kaspersky|bitdefender|avast|\bavg\b|\beset|malwarebytes|g-?helper|teams|onedrive|dropbox|google ?drive|icloud|bitwarden|1password|keepass|vpn|wireguard|logitech|lghub|razer|corsair|steelseries|wacom|teamviewer|anydesk|rustdesk|parsec|sunshine|\basus|armoury|lenovo|\bhp\b|\bdell|\bacer|\bmsi\b|print|\bscan|epson|canon|brother|xerox|kyocera|ricoh|lexmark|sql|mongo|postgres|redis|mariadb|docker|vmware|virtualbox|vbox|hyper-v|apache|nginx|tomcat|jenkins|plex|jellyfin|backup|veeam|acronis|macrium|anti-?cheat|battleye|vanguard|\bvgc\b|faceit|\bwsl|openrgb|signalrgb|fan ?control'
 $arSeen=@{}
-try{foreach($tk in @(Get-ScheduledTask -ErrorAction Stop|Where-Object{$_.TaskPath -notlike '\Microsoft\*' -and $_.TaskPath -ne '\DebloatHub\' -and "$($_.Author)" -notmatch 'Microsoft' -and $_.TaskName -notmatch '^NvTm'})){
+$coveredT=@{};foreach($t0 in $db){foreach($a0 in $t0.Acts){if($a0.K -eq 'Task'){$coveredT[$a0.N]=1}}}   # tasks already handled by a tweak above
+try{foreach($tk in @(Get-ScheduledTask -ErrorAction Stop|Where-Object{$_.TaskPath -notlike '\Microsoft\Windows\*' -and $_.TaskPath -ne '\DebloatHub\' -and $_.TaskName -notmatch '^NvTm|^CreateExplorerShellUnelevatedTask$' -and -not $coveredT.ContainsKey($_.TaskPath+$_.TaskName)})){
   $full=$tk.TaskPath+$tk.TaskName;$nm="Task: $($tk.TaskName)";if($arSeen.ContainsKey($nm)){$nm="Task: $full"};$arSeen[$nm]=1
   $exe=(@($tk.Actions|ForEach-Object{$_.Execute}|Where-Object{$_}) -join ', ');$trg=(@($tk.Triggers|ForEach-Object{($_.CimClass.CimClassName -replace '^MSFT_Task','' -replace 'Trigger$','')}|Select-Object -Unique) -join ', ')
-  $rk=$(if("$($tk.TaskName) $exe" -match $ESSENTIAL){'Moderate'}else{'Safe'})
+  $rk=$(if("$($tk.TaskName) $exe" -match $ESSENTIAL -or "$($tk.Author) $($tk.TaskPath)" -match 'Microsoft'){'Moderate'}else{'Safe'})   # Microsoft's own tasks (Office, Visual Studio, Edge, OneDrive): listed, never pre-selected by Maximum
   $db+=fTw $s15 $nm "Scheduled task $full runs: $(if($exe){$exe}else{'(no program)'})$(if($trg){" | when: $trg"})" $rk $sd Any '' @(fTask $full) 'Disabling a task only stops it from running on its own; the program still works when you open it. Re-enable it any time here or in Task Scheduler.'
   $more[$nm]=@('Updaters, telemetry and "helper" tasks of installed programs. Keep the ones that update security-relevant software (browsers, antivirus) unless you update them yourself.','The task no longer wakes up in the background at its trigger (logon, idle, daily).','The program may not update itself or do its background job (sync, backup, license check) until you run it manually.')}}catch{}
 $covered=@{};foreach($t0 in $db){foreach($a0 in $t0.Acts){if($a0.K -in 'Svc','SvcM'){$covered[$a0.N]=1}}}   # services already handled by a group above
-try{foreach($sv in @(Get-CimInstance Win32_Service -Filter "StartMode='Auto'" -ErrorAction Stop|Where-Object{$_.PathName -and $_.PathName -notmatch ('^"?'+[regex]::Escape($env:SystemRoot)) -and $_.PathName -notmatch '\\Microsoft|Windows Defender|Microsoft Office' -and -not $SVCINFO.Contains($_.Name) -and -not $covered.ContainsKey($_.Name) -and ($asusD+$asusM+@('NVDisplay.ContainerLocalSystem','NvContainerLocalSystem')) -notcontains $_.Name})){
+try{foreach($sv in @(Get-CimInstance Win32_Service -Filter "StartMode='Auto'" -ErrorAction Stop|Where-Object{$_.PathName -and ($_.PathName -notmatch ('^"?'+[regex]::Escape($env:SystemRoot)) -or $_.PathName -match '\\DriverStore\\') -and $_.PathName -notmatch '\\WindowsApps\\' -and $_.PathName -notmatch '\\Microsoft|Windows Defender|Microsoft Office' -and -not $SVCINFO.Contains($_.Name) -and -not $covered.ContainsKey($_.Name) -and ($asusD+$asusM+@('NVDisplay.ContainerLocalSystem','NvContainerLocalSystem')) -notcontains $_.Name})){
   $nm="Service: $($sv.DisplayName)";if($arSeen.ContainsKey($nm)){$nm="Service: $($sv.DisplayName) ($($sv.Name))"};$arSeen[$nm]=1
   $ess=("$($sv.Name) $($sv.DisplayName) $($sv.PathName)" -match $ESSENTIAL)
   $a=$(if($SvcStrict){fSvc $sv.Name Automatic}else{fSvm $sv.Name Automatic})
@@ -741,11 +753,10 @@ function Is-RecAct($a,$t){($a.K -eq 'App' -and ($RECOMMENDED -contains "APP:$($a
 function Is-Rec($u){($RECOMMENDED -contains $u.T.Name) -or ($RECOMMENDED -contains $u.Key) -or (@($u.Acts).Count -eq 1 -and (Is-RecAct @($u.Acts)[0] $u.T))}
 function Is-RecT($t){($RECOMMENDED -contains $t.Name) -or @($RECOMMENDED|Where-Object{$_.StartsWith("$($t.Name)|",[StringComparison]::Ordinal)}).Count -or @($t.Acts|Where-Object{Is-RecAct $_ $t}).Count}
 # ---------- Maximum preset: Recommended + the bigger RAM/process savings, still nothing essential switched off ----------
-# Kept working on purpose: Night light (CDPSvc), Snipping Tool, printing and Print to PDF, Bluetooth, Windows Hello, Windows Search and indexing,
-# Remote Desktop, background-app notifications (Teams, Alarms), Memory Integrity, thumbnails, Teams itself and Calculator/Camera/Alarms/Sticky Notes/players.
+# Rule: every entry must be undoable and must not switch off a Windows feature people rely on (switches with such side effects stay opt-in).
 # On top of Recommended: fewer svchost processes, Teams and every other non-essential startup entry off, non-essential third-party
 # auto-start services to Manual (Autoruns "Service:" items without the Advanced badge), third-party scheduled tasks that are not updaters
-# or backups off, Error Reporting, AI Fabric and the Ndu driver off, plus the portable parts of a tuned real-world setup (v1.4.0).
+# or backups off, Error Reporting, AI Fabric and the Ndu driver off, and a few small quality-of-life and privacy switches.
 $MAXIMUM=@('Group services into fewer svchost processes','Disable Windows Error Reporting','Disable AI Fabric service','Disable Network Data Usage monitor (Ndu driver)','APP:Microsoft.Office.OneNote'
  'Turn on hardware-accelerated GPU scheduling','No auto-restart while signed in','Disable OneDrive and sync-provider ads in Explorer'
  'Hide Task View button','Hide People Bar (Windows 10)','Hide Meet Now icon (Windows 10)'
@@ -767,10 +778,23 @@ function Show-Act($a){switch($a.K){
  'SvcM'{"SVC  $($a.N) -> Manual (starts only on demand)   [undo: restores the start type found before Apply; default if unknown: $($a.U)]"}
  'Feat'{"FEATURE disable $($a.N)   [undo: re-enables it if it was enabled before]"}
  'Startup'{"STARTUP disable '$($a.N)'   [undo: restores the previous entry; same list as Task Manager > Startup apps]"}
+ 'ArRun'{"STARTUP '$($a.N)' kept in $($a.P)\AutorunsDisabled (where Sysinternals Autoruns puts disabled entries)   [undo: moves it back to $($a.P)]"}
+ 'ArFile'{"STARTUP '$($a.N)' kept in $($a.P)\AutorunsDisabled (where Sysinternals Autoruns puts disabled entries)   [undo: moves it back to $($a.P)]"}
  'Spi'{"UI   $($a.N): effect $(if($a.V){'ON'}else{'OFF'})   [default: $(if($a.U){'ON'}else{'OFF'})]"}
  'Json'{"JSON $(Split-Path $a.P -Leaf): $($a.N) = $($a.V)   [undo: $(if($null -eq $a.U){'remove the key'}else{$a.U})]"}
  'Cmd'{"CMD  $($a.V)   [undo: $(if($a.U){$a.U}else{'none'})]"}}}
 
+function Move-RunValue($from,$to,$name){          # moves one Run value with its exact type and unexpanded data (as Sysinternals Autoruns does)
+ $k=Get-Item -LiteralPath $from -ErrorAction SilentlyContinue
+ if(-not $k -or $k.GetValueNames() -notcontains $name){throw "'$name' is not in $from"}
+ $kind=$k.GetValueKind($name).ToString();$v=$k.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+ if(-not(Test-Path -LiteralPath $to)){New-Item -Path $to -Force|Out-Null}
+ New-ItemProperty -LiteralPath $to -Name $name -Value $v -PropertyType $kind -Force|Out-Null
+ Remove-ItemProperty -LiteralPath $from -Name $name -ErrorAction Stop}
+function Move-StartupFile($from,$to,$name){
+ $src=Join-Path $from $name;if(-not(Test-Path -LiteralPath $src)){throw "'$name' is not in $from"}
+ if(-not(Test-Path -LiteralPath $to)){New-Item -ItemType Directory -Path $to -Force|Out-Null}
+ Move-Item -LiteralPath $src -Destination (Join-Path $to $name) -Force -ErrorAction Stop}
 function Do-Act($a,$undo){switch($a.K){
  'Reg'{$v=if($undo){$a.U}else{$a.V}
    if($null -eq $v){Remove-ItemProperty -Path $a.P -Name $a.N -ErrorAction SilentlyContinue}
@@ -783,6 +807,8 @@ function Do-Act($a,$undo){switch($a.K){
  'Feat'{if($undo){Enable-WindowsOptionalFeature -Online -FeatureName $a.N -NoRestart -All|Out-Null}else{Disable-WindowsOptionalFeature -Online -FeatureName $a.N -NoRestart|Out-Null}}
  'Startup'{if(-not(Test-Path $a.A)){New-Item $a.A -Force|Out-Null};$bb=if($undo){[byte[]](2,0,0,0,0,0,0,0,0,0,0,0)}else{[byte[]]((3,0,0,0)+[BitConverter]::GetBytes([DateTime]::UtcNow.ToFileTimeUtc()))};New-ItemProperty -Path $a.A -Name $a.N -PropertyType Binary -Value $bb -Force|Out-Null}
  'Spi'{Spi-Set $a $(if($undo){$a.U}else{$a.V})}
+ 'ArRun'{$d="$($a.P)\AutorunsDisabled";if($undo){Move-RunValue $d $a.P $a.N}else{Move-RunValue $a.P $d $a.N}}
+ 'ArFile'{$d=Join-Path $a.P 'AutorunsDisabled';if($undo){Move-StartupFile $d $a.P $a.N}else{Move-StartupFile $a.P $d $a.N}}
  'Json'{Json-Set $a $(if($undo){$a.U}else{$a.V})}
  'Cmd'{$c=if($undo){$a.U}else{$a.V}
    if(-not $c){Log '   (run-once action: no undo command, nothing to revert)';return}
@@ -1128,7 +1154,7 @@ function Undoable($t){-not @($t.Acts|Where-Object{$_.K -eq 'App' -or ($_.K -eq '
 function Act-Label($a){switch($a.K){
  'App'{if($LBL.ContainsKey($a.N)){$LBL[$a.N]}else{$n=$a.N -replace '^\*|\*$','' -replace '^Microsoft\.','' -replace '\.',' ';($n -creplace '(?<=[a-z0-9])(?=[A-Z])',' ').Trim()}}
  'Task'{Split-Path $a.N -Leaf}
- 'Startup'{$a.N}
+ {$_ -in 'Startup','ArRun','ArFile'}{$a.N}
  default{if(-not $a.N){'one-time command'}elseif($LBL.ContainsKey($a.N)){$LBL[$a.N]}elseif($a.K -eq 'Reg' -and $a.N -eq 'Value'){Split-Path $a.P -Leaf}else{$a.N}}}}
 
 # ---------- Apply / revert engine (works on "units": one switch each) ----------
@@ -1145,6 +1171,8 @@ function Act-Absent($a){switch($a.K){            # target does not exist on this
  'Feat'{if($script:fs -and $script:fs.Count){return -not $script:fs.ContainsKey([string]$a.N)};return -not(Get-WindowsOptionalFeature -Online -FeatureName $a.N -ErrorAction SilentlyContinue)}
  'Json'{return -not(Test-Path -LiteralPath (Split-Path $a.P))}
  'Reg'{return [bool]($a.Opt -and -not(Test-Path -LiteralPath $a.P))}
+ 'ArRun'{$in={param($p)$k=Get-Item -LiteralPath $p -ErrorAction SilentlyContinue;[bool]($k -and $k.GetValueNames() -contains $a.N)};return -not((& $in $a.P) -or (& $in "$($a.P)\AutorunsDisabled"))}
+ 'ArFile'{return -not((Test-Path -LiteralPath (Join-Path $a.P $a.N)) -or (Test-Path -LiteralPath (Join-Path (Join-Path $a.P 'AutorunsDisabled') $a.N)))}
  default{return $false}}}
 function Act-Revertible($a){-not ($a.K -eq 'App' -or ($a.K -eq 'Cmd' -and -not $a.U))}
 function Can-Undo($u){[bool]@($u.Acts|Where-Object{Act-Revertible $_}).Count}   # false = nothing in this switch can be undone automatically (removed apps, run-once commands)
@@ -1164,7 +1192,7 @@ function Run{
  $msg="Apply $($add.Count) change(s) and revert $($rem.Count)?";$ic='Question'
  if($one.Count){$ic='Warning';$msg+="`n`nRun-once actions (cannot be undone):`n - "+(($one|ForEach-Object{$_.Key -replace '\|',' > '}) -join "`n - ")
   if($add.Count -gt $one.Count -and @($one|Where-Object{$_.Key -match 'SFC|DISM|component cleanup'}).Count){$msg+="`n`nSFC/DISM can take 10+ minutes and work best on their own."}}
- $nr=@($rem|Where-Object{@($_.Acts|Where-Object{(Act-Revertible $_) -and $_.K -ne 'Cmd'}).Count -and -not @($_.Acts|Where-Object{$_.K -ne 'Cmd' -and (Snap-Read $_)}).Count}|ForEach-Object{$_.Key -replace '\|',' > '})
+ $nr=@($rem|Where-Object{@($_.Acts|Where-Object{(Act-Revertible $_) -and $_.K -notin 'Cmd','ArRun','ArFile'}).Count -and -not @($_.Acts|Where-Object{$_.K -ne 'Cmd' -and (Snap-Read $_)}).Count}|ForEach-Object{$_.Key -replace '\|',' > '})
  if($nr.Count){$ic='Warning';$msg+="`n`nNo recorded original for:`n - "+($nr -join "`n - ")+"`nThese were already applied before DebloatHub recorded anything (or by another tool), so undo sets Windows' documented default instead."}
  $wn=@($add|ForEach-Object{$_.T.Name}|Select-Object -Unique|Where-Object{$warnBy.ContainsKey($_)})
  if($wn.Count){$ic='Warning';$msg+="`n`nRead before continuing:";foreach($n in $wn){$msg+="`n - $($n): $($warnBy[$n])"}}
@@ -1209,6 +1237,8 @@ function Test-Act($a){switch($a.K){
  'Feat'{$fst=if($script:fs -and $script:fs.Count){$script:fs["$($a.N)"]}else{(Get-WindowsOptionalFeature -Online -FeatureName $a.N -ErrorAction SilentlyContinue).State}
    return (-not $fst -or "$fst" -in 'Disabled','DisablePending','DisabledWithPayloadRemoved')}
  'Startup'{$bb=(Get-ItemProperty -Path $a.A -Name $a.N -ErrorAction SilentlyContinue).($a.N);return [bool]($bb -and (($bb[0] -band 1) -eq 1))}
+ 'ArRun'{$in={param($p)$k=Get-Item -LiteralPath $p -ErrorAction SilentlyContinue;[bool]($k -and $k.GetValueNames() -contains $a.N)};return ((& $in "$($a.P)\AutorunsDisabled") -and -not(& $in $a.P))}
+ 'ArFile'{return ((Test-Path -LiteralPath (Join-Path (Join-Path $a.P 'AutorunsDisabled') $a.N)) -and -not(Test-Path -LiteralPath (Join-Path $a.P $a.N)))}
  'Spi'{$g=Spi-Get $a;if($null -eq $g){return $null};return ($g -eq [int]$a.V)}
  'Json'{if(-not(Test-Path -LiteralPath (Split-Path $a.P))){return $true}
    try{$o=Json-Read $a.P;$pr=$o.PSObject.Properties[$a.N];return [bool]($pr -and ("$($pr.Value)" -eq "$($a.V)"))}catch{return $null}}
@@ -1245,7 +1275,7 @@ function Log($m){[void]$sync.Q.Enqueue("$m")}
 function Get-FnText($n){$c=Get-Command $n -CommandType Function;$a=$c.ScriptBlock.Ast
  if($a -isnot [Management.Automation.Language.FunctionDefinitionAst] -and $a.Parent -is [Management.Automation.Language.FunctionDefinitionAst]){$a=$a.Parent}
  if($a -is [Management.Automation.Language.FunctionDefinitionAst]){$a.Extent.Text}else{"function $n {`n$($c.ScriptBlock.ToString())`n}"}}
-$ENGINE_TXT=$PRE+"`n"+((@('Fits-Ver','Spi-Blocked','Is-Leftover','Has-Record','Cmd-Marked','Clear-Folder','Clear-TempAndBin','Clear-CrashDumps','Clear-BrowserCaches','Reset-WUCache','Get-DnsAdapters','Get-StaticDns','Set-CloudflareDns','Undo-CloudflareDns','Test-CloudflareDns','Get-ActiveScheme','Enable-UltimatePlan','Disable-UltimatePlan','Set-MemoryCompression','Set-Hibernation','Invoke-AsUser','Uninstall-OneDrive','Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Set-DxFlag','Test-DxFlag','Get-SysCheck','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
+$ENGINE_TXT=$PRE+"`n"+((@('Fits-Ver','Spi-Blocked','Is-Leftover','Has-Record','Cmd-Marked','Clear-Folder','Clear-TempAndBin','Clear-CrashDumps','Clear-BrowserCaches','Reset-WUCache','Get-DnsAdapters','Get-StaticDns','Set-CloudflareDns','Undo-CloudflareDns','Test-CloudflareDns','Get-ActiveScheme','Enable-UltimatePlan','Disable-UltimatePlan','Set-MemoryCompression','Set-Hibernation','Invoke-AsUser','Uninstall-OneDrive','Fits','Cmd-Id','Task-Path','Act-Revertible','Act-Absent','Safe-Test','Test-Act','Get-State','Get-StateEx','Spi-Call','Spi-Get','Spi-Set','Json-Strip','Json-Read','Jsonc-SkipWs','Jsonc-StrEnd','Jsonc-ValEnd','Jsonc-Scan','Jsonc-Esc','Jsonc-Edit','Json-Set','Snap-Hash','Snap-Id','Snap-Ids','Snap-Read','Snap-Write','Snap-Clear','Snap-Capture','Snap-Take','Snap-Restore','Undo-Act','Select-StaleDrivers','Move-RunValue','Move-StartupFile','Clean-DriverStore','Clear-StandbyList','Install-NvEcoTask','Remove-NvEcoTask','Test-NvEcoTask','Set-DxFlag','Test-DxFlag','Get-SysCheck','Do-Act','Show-Act')|ForEach-Object{Get-FnText $_}) -join "`n")
 # ---------- Thread safety: WPF objects (CheckBox, Border...) live ONLY on the UI thread ----------
 # Background runspaces receive plain snapshots (strings, numbers, bools, arrays, hashtables) and return plain hashtables.
 function Copy-Act($a){$c=@{};foreach($k in $a.Keys){$c[$k]=$a[$k]};$c}      # acts hold only strings/numbers/bools/$null
@@ -1442,7 +1472,7 @@ function Affects($t){$p=@()
  $k=@($t.Acts|Where-Object{$_.K -eq 'Task'});if($k.Count){$p+="$($k.Count) scheduled task(s)"}
  if(@($t.Acts|Where-Object{$_.K -eq 'Cmd'}).Count){$p+='runs a system command'}
  $f=@($t.Acts|Where-Object{$_.K -eq 'Feat'});if($f.Count){$p+="$($f.Count) optional Windows feature(s) (reboot needed)"}
- $q=@($t.Acts|Where-Object{$_.K -eq 'Startup'});if($q.Count){$p+='1 startup entry (the app itself is not removed)'}
+ $q=@($t.Acts|Where-Object{$_.K -in 'Startup','ArRun','ArFile'});if($q.Count){$p+='1 startup entry (the app itself is not removed)'}
  $ui=@($t.Acts|Where-Object{$_.K -eq 'Spi'});if($ui.Count){$p+='1 visual-effect setting, current user (applies live)'}
  $jj=@($t.Acts|Where-Object{$_.K -eq 'Json'});if($jj.Count){$p+="$($jj.Count) setting(s) in $(Split-Path $jj[0].P -Leaf) (a .debloathub.bak backup is kept; only plain-JSON files are edited)"}
  $p -join '; '}
@@ -1564,7 +1594,7 @@ $xaml=@'
     <Button x:Name="bMax" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tMax" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
      <StackPanel><TextBlock Text="Maximum" FontSize="22" FontWeight="SemiBold"/>
-      <TextBlock Text="Everything in Debloat, plus Teams and all non-essential startup apps and third-party services off, and fewer svchost processes. Night light, Snipping Tool, printing and Bluetooth keep working." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+      <TextBlock Text="Everything in Debloat, plus Teams and all non-essential startup apps and third-party services off, and fewer svchost processes." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
     <Button x:Name="bUndo" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tUndo" DockPanel.Dock="Bottom" Foreground="#FFB74D" FontSize="13" Margin="0,10,0,0"/>
      <StackPanel><TextBlock Text="Undo" FontSize="22" FontWeight="SemiBold"/>
@@ -1585,7 +1615,7 @@ $w=[Windows.Markup.XamlReader]::Parse($xaml)
 $w.Title="DebloatHub v$AppVersion"
 'info','sum','nav','txt','pnl','log','ld','ldText','ldBar','sBar','chkRP','chkDry','bScan','pSafe','pMax','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bMax','bUndo','tRec','tMax','tUndo','sRP','lnkShow','lnkRemove','bRemove','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
 $pSafe.ToolTip='Recommended: performance and privacy tweaks, bloat-app removal (only Teams and the Media Player / Movies & TV players are kept), bloat services set to start on demand, non-essential startup apps off, and the gaming basics (raw mouse input, no Game Bar or Sticky Keys pop-ups). Everything except the removed apps can be undone with one click. Tweaks in this preset carry a "Recommended" badge.'
-$pMax.ToolTip='Maximum: everything in Recommended, plus fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed), non-essential third-party auto-start services set to Manual, Error Reporting, AI Fabric and the Ndu driver off. Night light, Snipping Tool, printing, Bluetooth, Windows Hello and search keep working. Extra tweaks carry a "Maximum" badge; all of them can be undone.'
+$pMax.ToolTip='Maximum: everything in Recommended, plus fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed), non-essential third-party auto-start services set to Manual, Error Reporting, AI Fabric and the Ndu driver off. Extra tweaks carry a "Maximum" badge; all of them can be undone.'
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
 $bc=New-Object Windows.Media.BrushConverter
 function Badge($t,$c,$tip){$b=New-Object Windows.Controls.Border;$b.Background=$bc.ConvertFromString($c)

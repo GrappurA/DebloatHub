@@ -2,6 +2,20 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-11-04
+
+### Added
+- **Autoruns lists more of what starts automatically:**
+  - entries turned off with Sysinternals Autoruns (it moves them into an `AutorunsDisabled` subkey or subfolder, so Task Manager no longer shows them) are listed as off, and switching one on moves it back;
+  - scheduled tasks outside `\Microsoft\Windows`, including Office, Visual Studio, Edge and OneDrive tasks (listed as Moderate, so presets leave them alone);
+  - auto-start services installed with driver packages (marked Advanced).
+- Before/after Task Manager screenshot in the README.
+
+### Changed
+- Shorter README; the full details moved to [docs/REFERENCE.md](docs/REFERENCE.md).
+- Clearer preset descriptions in the app.
+- Store-packaged services and the Windows Explorer helper task are no longer listed, and WSL counts as essential.
+
 ## [1.4.0] - 2026-11-04
 
 ### Added
@@ -9,7 +23,7 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
 - The one-line install command at the top of the README is now a code box with GitHub's copy button.
 
 ### Changed
-- **Maximum** now also includes the portable parts of a tuned real-world setup: hardware-accelerated GPU scheduling on, no automatic restart while signed in, no OneDrive ads in Explorer, no Task View / People / Meet Now buttons, Chrome no longer running in the background after you close it, no VS Code npm lookups, no handwriting and typing samples collected, and third-party scheduled tasks off unless they update, patch, back up, sync or license software. Hardware-specific items (ASUS services for G-Helper) and changes that can break things for some people (location off, OneDrive uninstall, third-party cookie blocking, Fast Startup, SysMain, memory compression, drivers from Windows Update, Xbox cloud saves, SMB 1 removal) stay opt-in in the Advanced view.
+- **Maximum** now also includes: hardware-accelerated GPU scheduling on, no automatic restart while signed in, no OneDrive ads in Explorer, no Task View / People / Meet Now buttons, Chrome no longer running in the background after you close it, no VS Code npm lookups, no handwriting and typing samples collected, and third-party scheduled tasks off unless they update, patch, back up, sync or license software.
 
 ## [1.3.0] - 2026-11-04
 
@@ -20,7 +34,7 @@ All notable changes to DebloatHub. Versions follow [Semantic Versioning](https:/
 - `-Preset Gaming` still works and now does the same as `-Preset Debloat`.
 
 ### Added
-- **Maximum preset** (the Simple view's second button, and a new button next to Recommended in the Advanced view): everything in Recommended plus fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed), non-essential third-party auto-start services set to Manual, Error Reporting, the AI Fabric service and the Ndu driver (Windows 10) off. Night light, Snipping Tool, printing, Bluetooth, Windows Hello, search, Remote Desktop, background-app notifications and Memory Integrity are never touched. Everything in it can be undone. Its extra tweaks carry a *Maximum* badge. Unattended: `-Preset Maximum`.
+- **Maximum preset** (the Simple view's second button, and a new button next to Recommended in the Advanced view): everything in Recommended plus fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed), non-essential third-party auto-start services set to Manual, Error Reporting, the AI Fabric service and the Ndu driver (Windows 10) off. Everything in it can be undone. Its extra tweaks carry a *Maximum* badge. Unattended: `-Preset Maximum`.
 
 ## [1.2.2] - 2026-11-04
 
