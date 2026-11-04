@@ -6,6 +6,10 @@ in one folder and start it from there.
 
 QUICK START
 -----------
+Even quicker, without the zip: open PowerShell, paste this and press Enter:
+    irm https://grappura.github.io/DebloatHub/install.ps1 | iex
+
+With the zip:
 1. Extract the WHOLE zip to a folder (for example C:\Tools\DebloatHub).
    Do not run it from inside the zip.
 2. Double-click "Start DebloatHub.bat".

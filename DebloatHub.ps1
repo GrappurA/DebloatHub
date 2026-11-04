@@ -6,7 +6,7 @@ param([switch]$Elevated,[switch]$ShowConsole,[switch]$NoShow,   # -NoShow: build
  [ValidateSet('Debloat','Gaming','Undo')][string]$Preset,[string]$Selection,[switch]$DryRun,[switch]$NoRestorePoint,
  # -Screenshot <folder>: renders the Advanced and Simple views to PNG files after the first scan, then closes (used by CI to refresh the README screenshots)
  [string]$Screenshot)
-$AppVersion='1.2.1'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$AppVersion='1.2.2'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
 $MyPath=$PSCommandPath
 $Headless=[bool]($Preset -or $Selection)
 if($Selection){$Selection=[IO.Path]::GetFullPath($Selection)}   # the elevated copy may start in another folder

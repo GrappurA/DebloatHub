@@ -6,6 +6,9 @@
   <a href="https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.zip"><img src="https://img.shields.io/badge/Download-DebloatHub.zip-2ea44f?style=for-the-badge&logo=windows&logoColor=white" alt="Download DebloatHub.zip" height="42"></a>
 </p>
 
+<p align="center">or paste into PowerShell: <code>irm https://grappura.github.io/DebloatHub/install.ps1 | iex</code>
+</p>
+
 <p align="center">
   <a href="https://github.com/GrappurA/DebloatHub/releases/latest"><img src="https://img.shields.io/github/v/release/GrappurA/DebloatHub?label=latest&color=4CC2FF" alt="Latest release"></a>
   <a href="https://github.com/GrappurA/DebloatHub/releases"><img src="https://img.shields.io/github/downloads/GrappurA/DebloatHub/total?color=B388FF" alt="Downloads"></a>
@@ -67,21 +70,30 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 
 ## Quick start
 
+**Option 1: one line in PowerShell (quickest).** Open PowerShell (Start menu, type *PowerShell*, Enter), paste this and press Enter:
+
+```powershell
+irm https://grappura.github.io/DebloatHub/install.ps1 | iex
+```
+
+It downloads `DebloatHub.ps1` from the latest release, checks its SHA-256 against the release's `SHA256SUMS.txt`, keeps it in `%LOCALAPPDATA%\DebloatHub` and starts it; click **Yes** for administrator rights. Run the same line again to update. [`install.ps1`](install.ps1) is short, so read it first if you like. If `grappura.github.io` is blocked on your network, the same installer is attached to every release:
+
+```powershell
+irm https://github.com/GrappurA/DebloatHub/releases/latest/download/install.ps1 | iex
+```
+
+**Option 2: the zip (inspect everything first).**
+
 1. **[Download DebloatHub.zip](https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.zip)** and extract it anywhere (the zip contains a short `README.txt` with these steps). Extract it first: do not run it from inside the zip.
 2. Double-click **`Start DebloatHub.bat`** and accept the administrator prompt.
-3. Wait for the first scan, then flip switches or start from a preset.
-4. Leave **Restore point first** on, optionally try **Dry run**, and press **Apply**.
-5. Sign out or reboot when the log says so.
 
 > **"Windows protected your PC"?** Windows shows this for any downloaded script that is not code-signed. Click **More info › Run anyway**. Or before extracting, right-click the zip › **Properties** › tick **Unblock** › OK.
 
-**Check your download (optional).** Every release lists the SHA-256 of its files in `SHA256SUMS.txt`. In PowerShell, in your Downloads folder, run `Get-FileHash DebloatHub.zip` and compare the hash with that file.
+**Check your download (optional).** Every release lists the SHA-256 of its files in `SHA256SUMS.txt`. In PowerShell, in your Downloads folder, run `Get-FileHash DebloatHub.zip` and compare the hash with that file. (The one-liner does this check for you.)
 
-**Prefer PowerShell?** Paste this into a PowerShell window. It downloads the script to your Temp folder and starts it, asking for admin rights itself:
+**Then:** wait for the first scan, flip switches or start from a preset, leave **Restore point first** on (optionally try **Dry run**) and press **Apply**. Sign out or reboot when the log says so.
 
-```powershell
-[Net.ServicePointManager]::SecurityProtocol="Tls12"; $p="$env:TEMP\DebloatHub.ps1"; irm https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.ps1 -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p
-```
+Both options run the same program from the same release, and your undo records are kept when you switch between them or update. The download page is also at **https://grappura.github.io/DebloatHub/**.
 
 **Requirements:** Windows 10 or 11 (64-bit), Windows PowerShell 5.1 (built in), administrator rights.
 
@@ -215,6 +227,7 @@ Run the tests before opening a pull request: `powershell -File tests\Test-Debloa
 | `HKLM\SOFTWARE\DebloatHub\Applied` | Markers for reversible commands without their own detector |
 | `HKLM\SOFTWARE\DebloatHub\Dns` | Each network adapter's DNS servers before *Use Cloudflare DNS* |
 | `HKLM\SOFTWARE\DebloatHub\Power` | The power plan that was active before *Ultimate Performance* |
+| `%LOCALAPPDATA%\DebloatHub` | The script, when installed with the one-liner |
 | `HKCU\SOFTWARE\DebloatHub` | UI preferences (pros & cons, Simple/Advanced, service mode) |
 | `%ProgramData%\DebloatHub\Logs` | Log of every session (kept 90 days) |
 | Task Scheduler › `DebloatHub` | Tasks created by tweaks (only when you enable them) |

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DebloatHub</title>
+<meta name="description" content="Windows 10/11 debloat, privacy and performance tweaks in one GUI. Every change is previewable, verified and reversible.">
+<style>
+  :root { --bg:#f6f7f9; --card:#ffffff; --text:#17191c; --muted:#5b6270; --line:#e2e5ea; --accent:#0a7cc2; --accent-ink:#ffffff; --code:#eef1f5; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16181b; --card:#1f2226; --text:#eceff3; --muted:#a3aab5; --line:#30343a; --accent:#4cc2ff; --accent-ink:#0b0b0b; --code:#2a2e33; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.55 "Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 40px; margin: 0 0 4px; letter-spacing: -0.5px; }
+  .lead { color: var(--muted); margin: 0 0 32px; font-size: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  h2 { font-size: 18px; margin: 0 0 4px; }
+  .hint { color: var(--muted); margin: 0 0 12px; font-size: 15px; }
+  .cmd { display: flex; gap: 8px; align-items: stretch; }
+  code.line { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; background: var(--code); border-radius: 8px; padding: 12px 14px; font: 14px/1.4 Consolas, "Cascadia Mono", ui-monospace, monospace; }
+  button, a.btn { border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; background: var(--accent); color: var(--accent-ink); text-decoration: none; display: inline-block; white-space: nowrap; }
+  ol { margin: 8px 0 0; padding-left: 22px; color: var(--muted); }
+  ol li { margin: 2px 0; }
+  footer { color: var(--muted); font-size: 14px; margin-top: 28px; }
+  footer a, .card a:not(.btn) { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>DebloatHub</h1>
+  <p class="lead">Windows 10/11 debloat, privacy and performance tweaks in one window. Every change is previewable, verified and reversible.</p>
+
+  <section class="card">
+    <h2>Quickest: one line in PowerShell</h2>
+    <p class="hint">Open PowerShell (Start menu, type "PowerShell", Enter), paste this line and press Enter. It downloads the latest release, checks its SHA-256 checksum and starts DebloatHub; click <b>Yes</b> when Windows asks for administrator rights.</p>
+    <div class="cmd">
+      <code class="line" id="cmd">irm https://grappura.github.io/DebloatHub/install.ps1 | iex</code>
+      <button type="button" id="copy">Copy</button>
+    </div>
+    <ol>
+      <li>Nothing is installed: the script is kept in <code>%LOCALAPPDATA%\DebloatHub</code>.</li>
+      <li>Run the same line again to update.</li>
+      <li>Want to read it first? <a href="install.ps1">install.ps1</a> is short.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>Or download the zip</h2>
+    <p class="hint">Extract it, then double-click <b>Start DebloatHub.bat</b>. Same program, same version.</p>
+    <a class="btn" href="https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.zip">Download DebloatHub.zip</a>
+  </section>
+
+  <footer>
+    <a href="https://github.com/GrappurA/DebloatHub">Source and documentation</a> ·
+    <a href="https://github.com/GrappurA/DebloatHub/releases">All releases and checksums</a> ·
+    Use at your own risk; keep "Restore point first" on.
+  </footer>
+</main>
+<script>
+  document.getElementById('copy').addEventListener('click', function () {
+    var text = document.getElementById('cmd').textContent, b = this;
+    function done() { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1500); }
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, function () {}); }
+    else { var r = document.createRange(); r.selectNodeContents(document.getElementById('cmd')); var s = getSelection(); s.removeAllRanges(); s.addRange(r); try { document.execCommand('copy'); done(); } catch (e) {} }
+  });
+</script>
+</body>
+</html>

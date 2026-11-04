@@ -66,6 +66,15 @@ Check 'pnputil is never called with /force' { if (@($cmds | Where-Object { $_.Ex
 Check 'every Start-Process of PowerShell uses the 64-bit $PSExe' {
     $bad = @($cmds | Where-Object { $_.GetCommandName() -eq 'Start-Process' -and $_.Extent.Text -match '^Start-Process powershell\b' }); if ($bad.Count) { throw ($bad | ForEach-Object { "L$($_.Extent.StartLineNumber)" }) -join ', ' } }
 
+# ---------- one-line installer ----------
+Write-Host 'Installer'
+$inst = Join-Path $root 'install.ps1'
+Check 'install.ps1 parses without errors' { $e2 = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($inst, [ref]$null, [ref]$e2); if ($e2.Count) { throw ($e2 | ForEach-Object Message) -join '; ' } }
+Check 'install.ps1 is pure ASCII' { -not @([IO.File]::ReadAllBytes($inst) | Where-Object { $_ -gt 127 }).Count }
+Check 'install.ps1 verifies the SHA-256 before saving or starting anything' { $t = [IO.File]::ReadAllText($inst); ($t.IndexOf('Get-FileHash') -gt 0) -and ($t.IndexOf('Get-FileHash') -lt $t.IndexOf('Move-Item')) -and ($t.IndexOf('Move-Item') -lt $t.IndexOf('Start-Process')) }
+Check 'the release attaches install.ps1 and lists it in SHA256SUMS.txt' { $r = [IO.File]::ReadAllText((Join-Path $root '.github/workflows/release.yml')); ($r -match 'sha256sum [^\n]*install\.ps1') -and ($r -match 'dist/install\.ps1') }
+Check 'README, landing page and release notes show the same one-liner' { $l = 'irm https://grappura.github.io/DebloatHub/install.ps1 | iex'; foreach ($f in 'README.md', 'site/index.html', '.github/workflows/release.yml', 'release/README.txt') { if (-not ([IO.File]::ReadAllText((Join-Path $root $f))).Contains($l)) { throw "missing in $f" } }; $true }
+
 # ---------- JSONC in-place editing ----------
 Write-Host 'JSONC editing'
 . (Load 'Json-Strip', 'Jsonc-SkipWs', 'Jsonc-StrEnd', 'Jsonc-ValEnd', 'Jsonc-Scan', 'Jsonc-Esc', 'Jsonc-Edit')

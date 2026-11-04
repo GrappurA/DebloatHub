@@ -1,0 +1,64 @@
+name: Pages
+
+# Publishes the one-line installer and its landing page at https://grappura.github.io/DebloatHub/
+#   irm https://grappura.github.io/DebloatHub/install.ps1 | iex
+# install.ps1 always fetches the LATEST release, so this only needs to run when install.ps1 or the page changes.
+on:
+  push:
+    branches: [main]
+    paths: ['install.ps1', 'site/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the site
+        run: |
+          mkdir -p _site
+          cp site/* _site/
+          cp install.ps1 _site/install.ps1
+          touch _site/.nojekyll
+          ls -la _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # The real thing on Windows PowerShell 5.1: irm <pages url> | iex, without starting the GUI
+  verify:
+    needs: deploy
+    runs-on: windows-latest
+    steps:
+      - name: irm | iex from GitHub Pages (download + checksum, no start)
+        shell: powershell
+        env:
+          DEBLOATHUB_NOSTART: '1'
+          PAGE_URL: ${{ needs.deploy.outputs.url }}
+        run: |
+          $u = "$($env:PAGE_URL.TrimEnd('/'))/install.ps1"
+          for ($i = 1; $i -le 10; $i++) { try { $code = Invoke-RestMethod $u; if ($code -match 'DebloatHub one-line installer') { break } } catch {}; Start-Sleep 15 }
+          if ($code -isnot [string]) { throw "Invoke-RestMethod returned $($code.GetType().FullName), not text" }
+          Write-Host "Fetched $u ($($code.Length) chars)"
+          Invoke-Expression $code
+          $p = Join-Path $env:LOCALAPPDATA 'DebloatHub\DebloatHub.ps1'
+          if (-not (Test-Path $p)) { throw "DebloatHub.ps1 was not saved to $p" }

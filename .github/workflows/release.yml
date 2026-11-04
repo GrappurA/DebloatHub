@@ -38,8 +38,8 @@ jobs:
           sed "s/{{VERSION}}/${GITHUB_REF_NAME}/" release/README.txt > dist/DebloatHub/README.txt
           if [ -f LICENSE ]; then cp LICENSE dist/DebloatHub/; fi
           (cd dist && zip -r -X -9 DebloatHub.zip DebloatHub)
-          cp DebloatHub.ps1 dist/DebloatHub.ps1
-          (cd dist && sha256sum DebloatHub.zip DebloatHub.ps1 > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          cp DebloatHub.ps1 install.ps1 dist/
+          (cd dist && sha256sum DebloatHub.zip DebloatHub.ps1 install.ps1 > SHA256SUMS.txt && cat SHA256SUMS.txt)
 
       - name: Release notes (installation first, then changes from CHANGELOG.md)
         run: |
@@ -48,6 +48,14 @@ jobs:
           if [ ! -s changes.md ]; then echo "::error::CHANGELOG.md has no '## [${ver}]' section"; exit 1; fi
           {
             echo "## Installation"
+            echo ""
+            echo "**Quickest:** open PowerShell, paste this line and press Enter. It downloads this release, checks its SHA-256 and starts DebloatHub (click **Yes** for administrator rights):"
+            echo ""
+            echo '```powershell'
+            echo 'irm https://grappura.github.io/DebloatHub/install.ps1 | iex'
+            echo '```'
+            echo ""
+            echo "**Or the zip:**"
             echo ""
             echo "1. Download **DebloatHub.zip** from *Assets* below."
             echo "2. Extract the whole zip to a folder (do not run it from inside the zip)."
@@ -58,12 +66,12 @@ jobs:
             echo ""
             echo "**Requirements:** Windows 10 or 11 (64-bit), administrator rights. Nothing to install: DebloatHub is portable."
             echo ""
-            echo "**Updating:** replace the old files with the new ones; your undo records are kept."
+            echo "**Updating:** run the line again, or replace the old files with the new ones; your undo records are kept either way."
             echo ""
-            echo "<details><summary>PowerShell one-liner instead of the zip</summary>"
+            echo "<details><summary>If grappura.github.io is blocked on your network</summary>"
             echo ""
             echo '```powershell'
-            echo '[Net.ServicePointManager]::SecurityProtocol="Tls12"; $p="$env:TEMP\DebloatHub.ps1"; irm https://github.com/GrappurA/DebloatHub/releases/latest/download/DebloatHub.ps1 -OutFile $p; powershell -NoProfile -ExecutionPolicy Bypass -File $p'
+            echo 'irm https://github.com/GrappurA/DebloatHub/releases/latest/download/install.ps1 | iex'
             echo '```'
             echo "</details>"
             echo ""
@@ -80,5 +88,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/DebloatHub.zip dist/DebloatHub.ps1 dist/SHA256SUMS.txt \
+          gh release create "$GITHUB_REF_NAME" dist/DebloatHub.zip dist/DebloatHub.ps1 dist/install.ps1 dist/SHA256SUMS.txt \
             --title "DebloatHub ${GITHUB_REF_NAME}" --notes-file notes.md --verify-tag
