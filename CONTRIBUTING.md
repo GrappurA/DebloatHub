@@ -17,7 +17,7 @@ Use the **Tweak request** form. Please include the exact registry value, service
 
 ## Pull requests
 
-1. Tweaks are data: add an `fTw` line (see *Adding your own tweaks* in the README) and a `$more['Name']=@(need it?, pros, cons)` entry. Be honest in the cons.
+1. Tweaks are data: add an `fTw` line (see [Adding your own tweaks](docs/REFERENCE.md#adding-your-own-tweaks)) and a `$more['Name']=@(need it?, pros, cons)` entry. Be honest in the cons.
 2. Every change must be undoable unless it is a clearly labelled one-time action. Prefer `fReg`, `fSvc`/`fSvm`, `fTask`: their originals are recorded automatically.
 3. Never use `Remove-Item -Recurse` on folders a user can write to; use `Clear-Folder` (Windows PowerShell 5.1 follows junctions).
 4. Keep `DebloatHub.ps1` pure ASCII with CRLF line endings (Windows PowerShell 5.1 reads BOM-less files as ANSI).
