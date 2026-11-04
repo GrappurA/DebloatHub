@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/GrappurA/DebloatHub/releases/latest"><img src="https://img.shields.io/github/v/release/GrappurA/DebloatHub?label=latest&color=4CC2FF" alt="Latest release"></a>
+  <a href="https://github.com/GrappurA/DebloatHub/releases"><img src="https://img.shields.io/github/downloads/GrappurA/DebloatHub/total?label=downloads&color=B388FF" alt="Downloads"></a>
   <a href="https://github.com/GrappurA/DebloatHub/actions/workflows/ci.yml"><img src="https://github.com/GrappurA/DebloatHub/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 | 11">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT license"></a>
