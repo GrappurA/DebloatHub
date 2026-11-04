@@ -33,7 +33,8 @@ FIRST USE
 ---------
 - Hover a switch to see what it does, who needs it, its pros and cons and
   the exact changes.
-- Start from a preset (Recommended, Privacy, Gaming) or flip switches yourself.
+- Start from a preset (Recommended, Maximum, Privacy, Gaming) or flip
+  switches yourself.
   Nothing changes until you press Apply.
 - Leave "Restore point first" ON. Turn on "Dry run" to preview without
   changing anything.
@@ -63,7 +64,7 @@ UNINSTALLING
 COMMAND LINE (NO WINDOW)
 ------------------------
 From an administrator PowerShell window in this folder:
-    .\DebloatHub.ps1 -Preset Debloat      (or Gaming, or Undo)
+    .\DebloatHub.ps1 -Preset Debloat      (or Maximum, or Undo)
     .\DebloatHub.ps1 -Selection my-selection.json
 Add -DryRun to only list what would change.
 

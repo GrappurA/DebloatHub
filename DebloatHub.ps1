@@ -2,11 +2,11 @@
 # DebloatHub - curated, previewable, reversible Windows tweaks in one GUI.
 # Run: right-click > "Run with PowerShell" (auto-elevates). Try it in a VM first.
 param([switch]$Elevated,[switch]$ShowConsole,[switch]$NoShow,   # -NoShow: build everything but do not open the window (automated tests dot-source the script with it)
- # Unattended mode (no window): -Preset Debloat|Gaming|Undo, or -Selection <file saved with "Save selection">. Add -DryRun to preview, -NoRestorePoint to skip the restore point.
- [ValidateSet('Debloat','Gaming','Undo')][string]$Preset,[string]$Selection,[switch]$DryRun,[switch]$NoRestorePoint,
+ # Unattended mode (no window): -Preset Debloat|Maximum|Undo (Gaming = Debloat, kept for old scripts), or -Selection <file saved with "Save selection">. Add -DryRun to preview, -NoRestorePoint to skip the restore point.
+ [ValidateSet('Debloat','Maximum','Gaming','Undo')][string]$Preset,[string]$Selection,[switch]$DryRun,[switch]$NoRestorePoint,
  # -Screenshot <folder>: renders the Advanced and Simple views to PNG files after the first scan, then closes (used by CI to refresh the README screenshots)
  [string]$Screenshot)
-$AppVersion='1.2.2'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
+$AppVersion='1.3.0'   # keep in sync with the release tag (vX.Y.Z); the release workflow checks it
 $MyPath=$PSCommandPath
 $Headless=[bool]($Preset -or $Selection)
 if($Selection){$Selection=[IO.Path]::GetFullPath($Selection)}   # the elevated copy may start in another folder
@@ -644,8 +644,9 @@ foreach($k in @('ArmouryCrateControlInterface','ArmouryCrateProArtService','AsHi
 SvcGroup -Fixed 'Third-party updaters & helpers: start on demand' 'Sets background updater and vendor telemetry services from Automatic to Manual: Google (Chrome) Update, Brave Update, Adobe Acrobat/Creative Cloud update and genuine-check services, Dropbox Update, HP Touchpoint Analytics and HP diagnostics, Dell SupportAssist, AMD User Experience Program and Crash Defender, Killer Analytics. Only services installed on this PC are listed.' Safe @(@('gupdate','M','Automatic'),@('GoogleUpdaterService*','M','Automatic'),@('GoogleUpdaterInternalService*','M','Automatic'),@('brave','M','Automatic'),@('AdobeARMservice','M','Automatic'),@('AdobeUpdateService','M','Automatic'),@('AGSService','M','Automatic'),@('AGMService','M','Automatic'),@('dbupdate','M','Automatic'),@('HpTouchpointAnalyticsService','M','Automatic'),@('HPDiagsCap','M','Automatic'),@('HPSysInfoCap','M','Automatic'),@('SupportAssistAgent','M','Automatic'),@('AUEPLauncher','M','Automatic'),@('AMD Crash Defender Service','M','Automatic'),@('KAPSService','M','Automatic')) 'Recommended: the apps still update through their own scheduled tasks or when you open them.' @('Use it if these services run all the time just to check for updates or collect usage data.','Fewer always-running processes at boot; less background network and disk activity.','Updates may arrive a little later (when the app or its scheduled task runs). Dell SupportAssist and HP Support Assistant may need a moment to start, or show "service not running" until you open them again.')
 # ---------- Autoruns: third-party scheduled tasks and auto-start services (startup apps are built above) ----------
 # Disable only, always undoable: tasks are disabled (not deleted); services go to Manual (Strict mode: Disabled).
-# "Essential" = drivers (anything in DriverStore/System32), audio, touchpad, GPU, peripherals, security, sync, VPN, password managers, remote access, G-Helper, Teams.
-$ESSENTIAL='(?i)driverstore|\\system32\\|realtek|\brtk|rthdvcpl|audio|sound|nahimic|dolby|waves|\bsonic|synaptics|\belan|etdctrl|touchpad|nvidia|\bamd|radeon|\bintel|igfx|graphics|bluetooth|security|defender|antivirus|norton|mcafee|kaspersky|bitdefender|avast|\bavg\b|\beset|malwarebytes|g-?helper|teams|onedrive|dropbox|google ?drive|icloud|bitwarden|1password|keepass|vpn|wireguard|logitech|lghub|razer|corsair|steelseries|wacom|teamviewer|anydesk|rustdesk|parsec|sunshine|\basus|armoury|lenovo|\bhp\b|\bdell|\bacer|\bmsi\b'
+# "Essential" = drivers (anything in DriverStore/System32), audio, touchpad, GPU, peripherals, printers/scanners, security, sync, VPN, password managers,
+# remote access, databases/containers/VMs/servers, backup, anti-cheat, fan/RGB control, G-Helper, Teams.
+$ESSENTIAL='(?i)driverstore|\\system32\\|realtek|\brtk|rthdvcpl|audio|sound|nahimic|dolby|waves|\bsonic|synaptics|\belan|etdctrl|touchpad|nvidia|\bamd|radeon|\bintel|igfx|graphics|bluetooth|security|defender|antivirus|norton|mcafee|kaspersky|bitdefender|avast|\bavg\b|\beset|malwarebytes|g-?helper|teams|onedrive|dropbox|google ?drive|icloud|bitwarden|1password|keepass|vpn|wireguard|logitech|lghub|razer|corsair|steelseries|wacom|teamviewer|anydesk|rustdesk|parsec|sunshine|\basus|armoury|lenovo|\bhp\b|\bdell|\bacer|\bmsi\b|print|\bscan|epson|canon|brother|xerox|kyocera|ricoh|lexmark|sql|mongo|postgres|redis|mariadb|docker|vmware|virtualbox|vbox|hyper-v|apache|nginx|tomcat|jenkins|plex|jellyfin|backup|veeam|acronis|macrium|anti-?cheat|battleye|vanguard|\bvgc\b|faceit|openrgb|signalrgb|fan ?control'
 $arSeen=@{}
 try{foreach($tk in @(Get-ScheduledTask -ErrorAction Stop|Where-Object{$_.TaskPath -notlike '\Microsoft\*' -and $_.TaskPath -ne '\DebloatHub\' -and "$($_.Author)" -notmatch 'Microsoft' -and $_.TaskName -notmatch '^NvTm'})){
   $full=$tk.TaskPath+$tk.TaskName;$nm="Task: $($tk.TaskName)";if($arSeen.ContainsKey($nm)){$nm="Task: $full"};$arSeen[$nm]=1
@@ -706,7 +707,7 @@ $secs=@($gk|Where-Object{$g=$_;@($db|Where-Object{$_.Sec -eq $g}).Count})
 # Rules: (1) a performance or privacy win, (2) nothing a typical user relies on stops working, (3) undoable with one click,
 # EXCEPT bloat-app removals (Store reinstall only). Kept on purpose: Teams, and Media Player + Movies & TV (the default music and video players).
 # Entries: 'Tweak name' = whole tweak; 'Tweak name|Sub-switch label' = one sub-switch; 'APP:<package>' = one app wherever it is listed.
-# Startup apps: every entry that does not match $STARTUP_KEEP (drivers, audio, touchpad, GPU, security, sync, G-Helper, Teams...).
+# Startup apps (classic and Microsoft Store): every entry that does not match $STARTUP_KEEP (drivers, audio, touchpad, GPU, security, sync, G-Helper, Teams...).
 $RECOMMENDED=@(
  'Disable telemetry & diagnostic services','Disable telemetry scheduled tasks','Disable app-compatibility telemetry (Inventory Collector, Steps Recorder)'
  'Disable NVIDIA telemetry (telemetry container, NvTm* tasks, opt-in flag)','Disable Office telemetry (diagnostic data "Neither", legacy Telemetry Agent)'
@@ -729,13 +730,24 @@ $RECOMMENDED=@(
  'APP:Microsoft.GetHelp','APP:MicrosoftCorporationII.QuickAssist','APP:Microsoft.YourPhone','APP:MicrosoftWindows.CrossDevice','APP:MicrosoftWindows.Client.WebExperience','APP:Microsoft.WindowsMaps','APP:Microsoft.PowerAutomateDesktop'
  # bloat services to Manual (in Manual mode they still start when something asks for them)
  'Xbox & Game Pass services','Phone Link & cross-device services','Printing & scanning services|Fax','Remote Desktop & Remote Registry (incoming)|Remote Registry'
+ # gaming basics (was the separate "Debloat + Gaming" button; all undoable, nothing laptop-unfriendly like Ultimate Performance)
+ 'Make sure Game Mode is on','Optimizations for windowed games (Windows 11)','Disable mouse acceleration','Disable Sticky Keys prompt','Disable Game Bar','Edge: put background tabs to sleep sooner|SleepingTabsEnabled','Edge: put background tabs to sleep sooner|SleepingTabsTimeout'
 )+$vfxRec
 $STARTUP_KEEP=$ESSENTIAL
-function Is-RecAct($a,$t){($a.K -eq 'App' -and ($RECOMMENDED -contains "APP:$($a.N)")) -or ($a.K -eq 'Startup' -and $t.Risk -ne 'Advanced' -and "$($a.N) $($t.Desc)" -notmatch $STARTUP_KEEP)}
+function Is-StartupT($t){"$($t.Name)".StartsWith('Disable at startup: ',[StringComparison]::Ordinal)}
+function Is-RecAct($a,$t){($a.K -eq 'App' -and ($RECOMMENDED -contains "APP:$($a.N)")) -or ((Is-StartupT $t) -and $t.Risk -ne 'Advanced' -and "$($t.Name) $($t.Desc)" -notmatch $STARTUP_KEEP)}
 function Is-Rec($u){($RECOMMENDED -contains $u.T.Name) -or ($RECOMMENDED -contains $u.Key) -or (@($u.Acts).Count -eq 1 -and (Is-RecAct @($u.Acts)[0] $u.T))}
-# Simple view "Debloat + Gaming" = Recommended + these (all undoable, nothing laptop-unfriendly like Ultimate Performance)
-$SIMPLE_GAMING=@('Make sure Game Mode is on','Optimizations for windowed games (Windows 11)','Disable mouse acceleration','Disable Sticky Keys prompt','Disable Game Bar','Disable Game DVR / background capture','Edge: put background tabs to sleep sooner|SleepingTabsEnabled','Edge: put background tabs to sleep sooner|SleepingTabsTimeout')
 function Is-RecT($t){($RECOMMENDED -contains $t.Name) -or @($RECOMMENDED|Where-Object{$_.StartsWith("$($t.Name)|",[StringComparison]::Ordinal)}).Count -or @($t.Acts|Where-Object{Is-RecAct $_ $t}).Count}
+# ---------- Maximum preset: Recommended + the bigger RAM/process savings, still nothing essential switched off ----------
+# Kept working on purpose: Night light (CDPSvc), Snipping Tool, printing and Print to PDF, Bluetooth, Windows Hello, Windows Search and indexing,
+# Remote Desktop, background-app notifications (Teams, Alarms), Memory Integrity, thumbnails, Teams itself and Calculator/Camera/Alarms/Sticky Notes/players.
+# On top of Recommended: fewer svchost processes, Teams and every other non-essential startup entry off, non-essential third-party
+# auto-start services to Manual (Autoruns "Service:" items without the Advanced badge), Error Reporting, AI Fabric and the Ndu driver off.
+$MAXIMUM=@('Group services into fewer svchost processes','Disable Windows Error Reporting','Disable AI Fabric service','Disable Network Data Usage monitor (Ndu driver)','APP:Microsoft.Office.OneNote')
+$MAX_KEEP=$ESSENTIAL -replace '\|teams\|','|'   # Teams no longer launches at sign-in; it stays installed and opens normally
+function Is-MaxAct($a,$t){($a.K -eq 'App' -and ($MAXIMUM -contains "APP:$($a.N)")) -or ((Is-StartupT $t) -and $t.Risk -ne 'Advanced' -and "$($t.Name) $($t.Desc)" -notmatch $MAX_KEEP) -or ("$($t.Name)".StartsWith('Service: ',[StringComparison]::Ordinal) -and $t.Risk -eq 'Moderate')}
+function Is-Max($u){(Is-Rec $u) -or ($MAXIMUM -contains $u.T.Name) -or ($MAXIMUM -contains $u.Key) -or (@($u.Acts).Count -eq 1 -and (Is-MaxAct @($u.Acts)[0] $u.T))}
+function Is-MaxT($t){($MAXIMUM -contains $t.Name) -or @($t.Acts|Where-Object{Is-MaxAct $_ $t}).Count}
 
 # ---------- Engine ----------
 function Show-Act($a){switch($a.K){
@@ -1490,7 +1502,7 @@ $xaml=@'
   <WrapPanel Margin="0,0,0,14">
    <Border CornerRadius="8" Background="#2B2B2B" BorderBrush="#454545" BorderThickness="1" Width="260" Margin="0,0,16,6"><TextBox x:Name="txt" Background="Transparent" BorderThickness="0" Foreground="#F3F3F3" CaretBrush="#F3F3F3" Padding="10,7"/></Border>
    <Button x:Name="bScan" Content="Detect applied tweaks" Style="{StaticResource Btn}" Background="#4CC2FF" Foreground="#0B0B0B" Margin="0,0,16,6"/>
-   <Button x:Name="pSafe" Content="Recommended" Style="{StaticResource Btn}"/><Button x:Name="pPriv" Content="Privacy" Style="{StaticResource Btn}"/>
+   <Button x:Name="pSafe" Content="Recommended" Style="{StaticResource Btn}"/><Button x:Name="pMax" Content="Maximum" Style="{StaticResource Btn}"/><Button x:Name="pPriv" Content="Privacy" Style="{StaticResource Btn}"/>
    <Button x:Name="pGame" Content="Gaming" Style="{StaticResource Btn}"/><Button x:Name="pNone" Content="Reset" Style="{StaticResource Btn}"/><Button x:Name="bToSimple" Content="Simple view" Style="{StaticResource Btn}"/>
    <CheckBox x:Name="chkPC" Style="{StaticResource Sw}" Content="Show pros &amp; cons" IsChecked="True" VerticalAlignment="Center" Margin="8,0,0,6"/></WrapPanel>
   <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel x:Name="pnl" Margin="0,0,6,0"/></ScrollViewer>
@@ -1534,11 +1546,11 @@ $xaml=@'
     <Button x:Name="bRec" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tRec" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
      <StackPanel><TextBlock Text="Debloat" FontSize="22" FontWeight="SemiBold"/>
-      <TextBlock Text="Turns off ads, telemetry, Widgets, startup junk, bloat services and bloat apps (Teams and the media players are kept)." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
-    <Button x:Name="bGame" Style="{StaticResource Card}"><DockPanel>
-     <TextBlock x:Name="tGame" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
-     <StackPanel><TextBlock Text="Debloat + Gaming" FontSize="22" FontWeight="SemiBold"/>
-      <TextBlock Text="Everything in Debloat, plus raw mouse input and no Game Bar or Sticky Keys pop-ups." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+      <TextBlock Text="Turns off ads, telemetry, Widgets, startup junk, bloat services and bloat apps (Teams and the media players are kept), plus raw mouse input and no Game Bar." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
+    <Button x:Name="bMax" Style="{StaticResource Card}"><DockPanel>
+     <TextBlock x:Name="tMax" DockPanel.Dock="Bottom" Foreground="#4CC2FF" FontSize="13" Margin="0,10,0,0"/>
+     <StackPanel><TextBlock Text="Maximum" FontSize="22" FontWeight="SemiBold"/>
+      <TextBlock Text="Everything in Debloat, plus Teams and all non-essential startup apps and third-party services off, and fewer svchost processes. Night light, Snipping Tool, printing and Bluetooth keep working." TextWrapping="Wrap" Foreground="#B0B0B0" FontSize="13" Margin="0,8,0,0"/></StackPanel></DockPanel></Button>
     <Button x:Name="bUndo" Style="{StaticResource Card}"><DockPanel>
      <TextBlock x:Name="tUndo" DockPanel.Dock="Bottom" Foreground="#FFB74D" FontSize="13" Margin="0,10,0,0"/>
      <StackPanel><TextBlock Text="Undo" FontSize="22" FontWeight="SemiBold"/>
@@ -1556,8 +1568,9 @@ $xaml=@'
 '@
 $w=[Windows.Markup.XamlReader]::Parse($xaml)
 $w.Title="DebloatHub v$AppVersion"
-'info','sum','nav','txt','pnl','log','ld','ldText','ldBar','sBar','chkRP','chkDry','bScan','pSafe','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bGame','bUndo','tRec','tGame','tUndo','sRP','lnkShow','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
-$pSafe.ToolTip='Recommended: performance and privacy tweaks, bloat-app removal (only Teams and the Media Player / Movies & TV players are kept), bloat services set to start on demand and non-essential startup apps off. Everything except the removed apps can be undone with one click. Tweaks in this preset carry a "Recommended" badge.'
+'info','sum','nav','txt','pnl','log','ld','ldText','ldBar','sBar','chkRP','chkDry','bScan','pSafe','pMax','pPriv','pGame','pNone','bApply','bExp','bImp','chkPC','bToSimple','simpleRoot','chooser','chSimple','chAdv','chRemember','simpleView','bToAdv','sStatus','bRec','bMax','bUndo','tRec','tMax','tUndo','sRP','lnkShow','bReboot','slog','sTips'|ForEach-Object{Set-Variable $_ ($w.FindName($_))}
+$pSafe.ToolTip='Recommended: performance and privacy tweaks, bloat-app removal (only Teams and the Media Player / Movies & TV players are kept), bloat services set to start on demand, non-essential startup apps off, and the gaming basics (raw mouse input, no Game Bar or Sticky Keys pop-ups). Everything except the removed apps can be undone with one click. Tweaks in this preset carry a "Recommended" badge.'
+$pMax.ToolTip='Maximum: everything in Recommended, plus fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed), non-essential third-party auto-start services set to Manual, Error Reporting, AI Fabric and the Ndu driver off. Night light, Snipping Tool, printing, Bluetooth, Windows Hello and search keep working. Extra tweaks carry a "Maximum" badge; all of them can be undone.'
 $info.Text="Windows $(if($W11){'11'}else{'10'}) (build $build)`nSwitches show what is ON now. Flip, then Apply.`nSwitches named Disable / Turn off: ON = that data collection is off."
 $bc=New-Object Windows.Media.BrushConverter
 function Badge($t,$c,$tip){$b=New-Object Windows.Controls.Border;$b.Background=$bc.ConvertFromString($c)
@@ -1615,7 +1628,7 @@ foreach($sec in $secs){
   [void]$top.Children.Add((Badge $t.Risk $rc ''))
   if(($t.Prof -split ',') -contains 'telemetry'){[void]$top.Children.Add((Badge 'ON = telemetry off' '#00695C' ''))}
   $n=($t.Src -split ',').Count
-  if(Is-RecT $t){[void]$top.Children.Add((Badge 'Recommended' '#4527A0' ''))}
+  if(Is-RecT $t){[void]$top.Children.Add((Badge 'Recommended' '#4527A0' ''))}elseif(Is-MaxT $t){[void]$top.Children.Add((Badge 'Maximum' '#283593' ''))}
   [void]$top.Children.Add((Badge "$n tool$(if($n -gt 1){'s'})" '#1565C0' ''))
   if($t.Win -ne 'Any'){[void]$top.Children.Add((Badge "Win $($t.Win) only" '#6A1B9A' ''))}
   [void]$top.Children.Add((Badge $(if(Undoable $t){'Undoable'}else{'No undo'}) $(if(Undoable $t){'#455A64'}else{'#8D6E63'}) ''))
@@ -1668,8 +1681,8 @@ function Refresh-View{$q=$txt.Text.Trim();$i=$nav.SelectedIndex
 function Pick($tag){if($script:busy){return};$n=0;$held=@()   # presets only ADD: switches that are already applied stay on
  foreach($u in $units){$t=$u.T;$ap=($ust[$u.Key] -eq 'Applied')
   if(-not $u.Box.IsEnabled){continue}                                           # locked / not on this PC / not available: keep what the scan shows
-  $want=if($tag -eq 'recommended'){Is-Rec $u}else{$tag -and (($t.Prof -split ',') -contains $tag)}
-  if($want -and $tag -ne 'recommended'){   # the Privacy and Gaming presets never pre-select Advanced (security-lowering) or irreversible items
+  $want=if($tag -eq 'recommended'){Is-Rec $u}elseif($tag -eq 'maximum'){Is-Max $u}else{$tag -and (($t.Prof -split ',') -contains $tag)}
+  if($want -and $tag -notin 'recommended','maximum'){   # the Privacy and Gaming presets never pre-select Advanced (security-lowering) or irreversible items
    $why=if($t.Risk -eq 'Advanced'){'Advanced'}elseif(-not(Can-Undo $u)){'cannot be undone'}elseif($HasBattery -and $t.Name -eq 'Ultimate Performance power plan'){'not for laptops on battery'}
    if($why){$want=$false;if(-not $ap){$held+="$($u.Key -replace '\|',' > ') ($why)"}}}
   $u.Box.IsChecked=[bool]($ap -or ((Fits $t) -and $want));if((Fits $t) -and $want -and -not $ap){$n++}}
@@ -1679,7 +1692,7 @@ function Pick($tag){if($script:busy){return};$n=0;$held=@()   # presets only ADD
 $cfg=Join-Path $(if($UserDesktop -and (Test-Path -LiteralPath $UserDesktop)){$UserDesktop}else{$UserProfile}) 'DebloatHub-selection.json'
 $nav.Add_SelectionChanged({Refresh-View});$txt.Add_TextChanged({Refresh-View});$nav.SelectedIndex=0
 $bScan.Add_Click({Scan})
-$pSafe.Add_Click({Pick 'recommended'});$pPriv.Add_Click({Pick 'privacy'});$pGame.Add_Click({Pick 'gaming'});$pNone.Add_Click({Pick $null})
+$pSafe.Add_Click({Pick 'recommended'});$pMax.Add_Click({Pick 'maximum'});$pPriv.Add_Click({Pick 'privacy'});$pGame.Add_Click({Pick 'gaming'});$pNone.Add_Click({Pick $null})
 $bApply.Add_Click({Run})
 $chkPC.Add_Click({$on=[bool]$chkPC.IsChecked;foreach($x in $pcBlocks){$x.Visibility=$(if($on){'Visible'}else{'Collapsed'})}
  try{if(-not(Test-Path 'HKCU:\SOFTWARE\DebloatHub')){New-Item 'HKCU:\SOFTWARE\DebloatHub' -Force|Out-Null};New-ItemProperty 'HKCU:\SOFTWARE\DebloatHub' -Name ShowProsCons -Value ([int]$on) -PropertyType DWord -Force|Out-Null}catch{}})
@@ -1707,17 +1720,17 @@ $timer.Add_Tick({$j=$script:job;if(-not $j){return}
   & $j.Done $script:res}})
 # ---------- Simple view: three buttons on top of the same engine (presets -> switches -> Run) ----------
 $script:needReboot=$false;$script:scanned=$false
-function In-Set($u,$what){(Fits $u.T) -and $u.Box.IsEnabled -and $(if($what -eq 'game'){(Is-Rec $u) -or ($SIMPLE_GAMING -contains $u.T.Name) -or ($SIMPLE_GAMING -contains $u.Key)}else{Is-Rec $u})}
+function In-Set($u,$what){(Fits $u.T) -and $u.Box.IsEnabled -and $(if($what -eq 'max'){Is-Max $u}else{Is-Rec $u})}
 function DH-Changed($u){Has-Record $u.Acts}         # did DebloatHub itself change this switch? (a recorded original or a command marker exists)
 function Undo-Units{@($units|Where-Object{$_.Box.IsEnabled -and $ust[$_.Key] -eq 'Applied' -and (Can-Undo $_) -and (DH-Changed $_)})}
 function Update-Simple{
  if(-not $simpleView -or $simpleView.Visibility -ne 'Visible'){return}
- if($script:busy -or -not $script:scanned){$bRec.IsEnabled=$false;$bGame.IsEnabled=$false;$bUndo.IsEnabled=$false;return}
+ if($script:busy -or -not $script:scanned){$bRec.IsEnabled=$false;$bMax.IsEnabled=$false;$bUndo.IsEnabled=$false;return}
  $rn=@($units|Where-Object{(In-Set $_ 'rec') -and $ust[$_.Key] -ne 'Applied'}).Count
- $gn=@($units|Where-Object{(In-Set $_ 'game') -and $ust[$_.Key] -ne 'Applied'}).Count
+ $mn=@($units|Where-Object{(In-Set $_ 'max') -and $ust[$_.Key] -ne 'Applied'}).Count
  $un=@(Undo-Units).Count
  $tRec.Text=$(if($rn){"$rn change$(if($rn -ne 1){'s'}) to make"}else{'Done on this PC'});$bRec.IsEnabled=($rn -gt 0)
- $tGame.Text=$(if($gn){"$gn change$(if($gn -ne 1){'s'}) to make"}else{'Done on this PC'});$bGame.IsEnabled=($gn -gt 0)
+ $tMax.Text=$(if($mn){"$mn change$(if($mn -ne 1){'s'}) to make"}else{'Done on this PC'});$bMax.IsEnabled=($mn -gt 0)
  $tUndo.Text=$(if($un){"$un change$(if($un -ne 1){'s'}) to undo"}else{'Nothing to undo'});$bUndo.IsEnabled=($un -gt 0)
  $sStatus.Text=$(if($script:needReboot){'Done. Restart your PC to finish.'}elseif(-not $rn){'Your PC is debloated. You can still undo it at any time.'}else{"Ready. Pick what you want; nothing changes until you confirm."})
  $bReboot.Visibility=$(if($script:needReboot){'Visible'}else{'Collapsed'})
@@ -1740,10 +1753,10 @@ $chSimple.Add_Click({if($chRemember.IsChecked){Save-UiMode 'Simple'};Show-View '
 $chAdv.Add_Click({if($chRemember.IsChecked){Save-UiMode 'Advanced'};Show-View 'advanced'})
 $bToAdv.Add_Click({Save-UiMode 'Advanced';Show-View 'advanced'})
 $bToSimple.Add_Click({Save-UiMode 'Simple';Show-View 'simple'})
-$bRec.Add_Click({Simple-Run 'rec'});$bGame.Add_Click({Simple-Run 'game'});$bUndo.Add_Click({Simple-Run 'undo'})
+$bRec.Add_Click({Simple-Run 'rec'});$bMax.Add_Click({Simple-Run 'max'});$bUndo.Add_Click({Simple-Run 'undo'})
 $lnkShow.Add_MouseLeftButtonUp({if($script:busy){return};Pick 'recommended';Show-View 'advanced';$nav.SelectedIndex=0})   # the blue bars show every pending change
 $bReboot.Add_Click({if([Windows.MessageBox]::Show('Restart the PC now? Save your work in other apps first.','DebloatHub','YesNo','Question') -eq 'Yes'){Start-Process shutdown.exe -ArgumentList '/r /t 5'}})
-# ---------- Unattended mode: -Preset Debloat|Gaming|Undo or -Selection <file>; same engine, no window ----------
+# ---------- Unattended mode: -Preset Debloat|Maximum|Undo or -Selection <file>; same engine, no window ----------
 function Invoke-Headless{
  $script:HeadlessExit=0
  Log "DebloatHub v$AppVersion - unattended mode: $(if($Selection){"selection $Selection"}else{"preset $Preset"})$(if($DryRun){' (dry run, nothing is changed)'})"
@@ -1755,7 +1768,7 @@ function Invoke-Headless{
  if($Selection){if(-not(Load-Selection $Selection)){$script:HeadlessExit=2;return}}
  else{Pick $null
   switch($Preset){'Undo'{foreach($u in (Undo-Units)){$u.Box.IsChecked=$false}}
-   'Gaming'{foreach($u in $units){if(In-Set $u 'game'){$u.Box.IsChecked=$true}}}
+   'Maximum'{foreach($u in $units){if(In-Set $u 'max'){$u.Box.IsChecked=$true}}}
    default{foreach($u in $units){if(In-Set $u 'rec'){$u.Box.IsChecked=$true}}}}}
  $p=Pending;$add=@($p[0]);$rem=@($p[1])
  foreach($bu in @($p[2])){Log "   '$($bu.Key -replace '\|',' > ')' has no undo command - left as is."}

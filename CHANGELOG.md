@@ -2,6 +2,17 @@
 
 All notable changes to DebloatHub. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-11-04
+
+### Changed
+- **Debloat / Recommended now includes the gaming basics** that used to be the separate "Debloat + Gaming" button: Game Mode, windowed-game optimizations, raw mouse input (no acceleration), no Game Bar, Game DVR or Sticky Keys pop-ups, and Edge putting background tabs to sleep sooner.
+- Recommended also turns off non-essential startup tasks of Microsoft Store apps (Spotify, WhatsApp and similar), not only classic startup entries. Teams, OneDrive and hardware apps stay on.
+- More things count as essential and are never switched off by a preset: printer and scanner software, databases, Docker, virtual machines, local web servers, backup tools, anti-cheat and fan/RGB control.
+- `-Preset Gaming` still works and now does the same as `-Preset Debloat`.
+
+### Added
+- **Maximum preset** (the Simple view's second button, and a new button next to Recommended in the Advanced view): everything in Recommended plus fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed), non-essential third-party auto-start services set to Manual, Error Reporting, the AI Fabric service and the Ndu driver (Windows 10) off. Night light, Snipping Tool, printing, Bluetooth, Windows Hello, search, Remote Desktop, background-app notifications and Memory Integrity are never touched. Everything in it can be undone. Its extra tweaks carry a *Maximum* badge. Unattended: `-Preset Maximum`.
+
 ## [1.2.2] - 2026-11-04
 
 ### Added

@@ -41,8 +41,26 @@ $appNames = @{}
 foreach ($sc in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true)) { $appNames[$sc.Value] = 1 }
 Check 'every Recommended entry names an existing tweak (or, for APP:<package>, a package the database lists)' {
     $miss = @(StringsIn $assign['$RECOMMENDED'].Right | Where-Object { if ($_ -like 'APP:*') { -not $appNames.ContainsKey($_.Substring(4)) } else { -not $tweakNames.ContainsKey(($_ -split '\|')[0]) } }); if ($miss.Count) { throw "unknown: $($miss -join ', ')" } }
-Check 'every Simple "Debloat + Gaming" entry names an existing tweak' {
-    $miss = @(StringsIn $assign['$SIMPLE_GAMING'].Right | Where-Object { -not $tweakNames.ContainsKey(($_ -split '\|')[0]) }); if ($miss.Count) { throw "unknown: $($miss -join ', ')" } }
+Check 'every Maximum entry names an existing tweak (or an app package)' {
+    $miss = @(StringsIn $assign['$MAXIMUM'].Right | Where-Object { if ($_ -like 'APP:*') { -not $appNames.ContainsKey($_.Substring(4)) } else { -not $tweakNames.ContainsKey(($_ -split '\|')[0]) } }); if ($miss.Count) { throw "unknown: $($miss -join ', ')" } }
+Check 'Maximum never touches what must keep working (Night light, Snipping Tool, printing, Bluetooth, search, background apps)' {
+    $bad = 'Connected Devices Platform|Printing & scanning services$|Bluetooth|Windows Hello|Search indexing|Block apps from running in the background|Memory Integrity|ScreenSketch|Remote Desktop & Remote Registry \(incoming\)$|SysMain'
+    $hit = @((StringsIn $assign['$MAXIMUM'].Right) + (StringsIn $assign['$RECOMMENDED'].Right) | Where-Object { $_ -match $bad }); if ($hit.Count) { throw "in a preset: $($hit -join ', ')" }
+}
+Check 'startup rules: Recommended keeps Teams, drivers and sync; Maximum turns Teams off but keeps the rest' {
+    $vfxRec = @()
+    foreach ($v in '$ESSENTIAL', '$STARTUP_KEEP', '$MAX_KEEP', '$RECOMMENDED', '$MAXIMUM') { . ([scriptblock]::Create($assign[$v].Extent.Text)) }
+    . (Load 'Is-StartupT', 'Is-RecAct', 'Is-MaxAct')
+    function T($name, $desc, $risk = 'Safe') { [pscustomobject]@{ Name = $name; Desc = $desc; Risk = $risk; Acts = @(@{ K = 'Startup'; N = 'x' }) } }
+    $teams = T 'Disable at startup: MSTeams - TeamsTfwStartupTask (Store app)' 'Store app startup task: MSTeams_8wekyb3d8bbwe\TeamsTfwStartupTask'
+    $spot = T 'Disable at startup: Spotify' 'Launches at sign-in: C:\Users\x\AppData\Roaming\Spotify\Spotify.exe /minimized'
+    $rtk = T 'Disable at startup: RtkAudUService' 'Launches at sign-in: C:\Windows\System32\DriverStore\FileRepository\rtk\RtkAudUService64.exe' 'Moderate'
+    $od = T 'Disable at startup: OneDrive' 'Launches at sign-in: C:\Program Files\Microsoft OneDrive\OneDrive.exe /background'
+    $svc = [pscustomobject]@{ Name = 'Service: Some Vendor Service'; Desc = 'Third-party service'; Risk = 'Moderate'; Acts = @(@{ K = 'SvcM'; N = 'x' }) }
+    $svcA = [pscustomobject]@{ Name = 'Service: Bluetooth Helper'; Desc = 'Third-party service'; Risk = 'Advanced'; Acts = @(@{ K = 'SvcM'; N = 'x' }) }
+    $sql = T 'Disable at startup: MySQL Notifier' 'Launches at sign-in: C:\Program Files (x86)\MySQL\MySQL Notifier\MySQLNotifier.exe'
+    $r = foreach ($x in $teams, $spot, $rtk, $od, $svc, $svcA, $sql) { "$([int][bool](Is-RecAct $x.Acts[0] $x))$([int][bool](Is-MaxAct $x.Acts[0] $x))" }
+    Eq ($r -join ',') '01,11,00,00,01,00,00' 'Recommended/Maximum for Teams, Spotify, Realtek, OneDrive, vendor service, Advanced service, MySQL' }
 Check 'every fTw tweak has pros/cons in $more' {
     $keys = @{}
     foreach ($h in $assign['$more'].Right.FindAll({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] }, $true)) { foreach ($kv in $h.KeyValuePairs) { $keys[$kv.Item1.Value] = 1 } }

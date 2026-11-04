@@ -93,6 +93,9 @@ $orph=@($db|Where-Object{$secs -notcontains $_.Sec}|ForEach-Object{"$($_.Name) [
 DhtCheck 'Every tweak is in a visible section' (-not $orph.Count) ($orph -join '; ')
 $recN=@($units|Where-Object{(Fits $_.T) -and (Is-Rec $_)}).Count
 DhtCheck 'Recommended selects switches' ($recN -gt 20) "$recN switches"
+$maxN=@($units|Where-Object{(Fits $_.T) -and (Is-Max $_)}).Count
+$maxBad=@($units|Where-Object{(Fits $_.T) -and (Is-Max $_) -and "$($_.Key)" -match 'Connected Devices Platform|Bluetooth|Windows Hello|Search indexing|Block apps from running in the background|Memory Integrity|ScreenSketch|Print Spooler|Remote Desktop Services'}|ForEach-Object Key)
+DhtCheck 'Maximum = Recommended + more, nothing essential' (($maxN -gt $recN) -and -not $maxBad.Count) "$maxN switches (Recommended: $recN)$(if($maxBad.Count){'; essential: '+($maxBad -join ', ')})"
 
 try{
 # ---------------- 4) every detector against the real system ----------------
@@ -115,7 +118,7 @@ $nav.SelectedIndex=[array]::IndexOf($secs,'Performance & Gaming')+1;Refresh-View
 $nav.SelectedIndex=[array]::IndexOf($secs,$sSvc)+1;Refresh-View;if(DhtPng '5-background-services'){$shots+='5-background-services'}
 $nav.SelectedIndex=0;Refresh-View
 DhtCheck 'Screenshots rendered' ($shots.Count -eq 5) ($shots -join ', ')
-DhtCheck 'Simple view counts' ($tRec.Text -and $tUndo.Text) "Debloat: '$($tRec.Text)', Gaming: '$($tGame.Text)', Undo: '$($tUndo.Text)'"
+DhtCheck 'Simple view counts' ($tRec.Text -and $tMax.Text -and $tUndo.Text) "Debloat: '$($tRec.Text)', Maximum: '$($tMax.Text)', Undo: '$($tUndo.Text)'"
 
 # ---------------- 7) apply -> verify -> undo round trip ----------------
 $kinds='Reg','Svc','SvcM','Task','Startup'

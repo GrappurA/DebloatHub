@@ -44,10 +44,10 @@ jobs:
 
       # End-to-end on real Windows: builds the whole tweak database, scans the runner, and plans every preset.
       # -DryRun changes nothing (no restore point, no registry, service or app changes).
-      - name: Smoke test - unattended dry runs (Debloat, Gaming, Undo)
+      - name: Smoke test - unattended dry runs (Debloat, Maximum, Gaming, Undo)
         shell: powershell
         run: |
-          foreach ($p in 'Debloat', 'Gaming', 'Undo') {
+          foreach ($p in 'Debloat', 'Maximum', 'Gaming', 'Undo') {
             Write-Host "===== -Preset $p -DryRun ====="
             powershell -NoProfile -ExecutionPolicy Bypass -File .\DebloatHub.ps1 -Preset $p -DryRun -NoRestorePoint
             if ($LASTEXITCODE -ne 0) { Write-Host "::error::-Preset $p -DryRun exited with code $LASTEXITCODE"; exit 1 }

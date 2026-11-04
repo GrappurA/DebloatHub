@@ -47,7 +47,7 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 ## Features
 
 - **System check.** Flags the things no tweak can fix but that matter most: outdated GPU driver, a monitor stuck at 60 Hz, RAM at default speed (XMP/EXPO off) or in single channel, Memory Integrity status.
-- **Simple or Advanced.** Simple is three buttons: *Debloat*, *Debloat + Gaming* and *Undo*, each showing how many changes it makes. Advanced is the full list below with every switch, detail and preset. Switch any time.
+- **Simple or Advanced.** Simple is three buttons: *Debloat*, *Maximum* and *Undo*, each showing how many changes it makes. Advanced is the full list below with every switch, detail and preset. Switch any time.
 - **130+ tweaks in 12 sections**, plus your own startup programs (Run keys, Startup folders and Microsoft Store app startup tasks), which are read from this PC.
 - **Switches show the real state.** On start, DebloatHub scans the PC and every switch shows what is ON right now: *Applied*, *Partial*, *Not applied*, *Not on this PC* (the service, task or program it changes is not installed) or *Not available here* (other Windows version).
 - **Nothing gets stuck after a Windows upgrade.** A Windows 10-only tweak you applied before upgrading to Windows 11 shows a purple *Left over* badge and can still be switched off and undone.
@@ -57,7 +57,8 @@ DebloatHub merges the most useful tweaks from popular debloat projects (WinUtil,
 - **Verified apply.** After each change the real system is checked again. Anything that did not take effect is reported as failed, not as done.
 - **Safety net.** Optional restore point before applying, a Dry run mode that only previews, and a confirmation that lists one-time actions and risky items.
 - **Progress and time left.** While changes are applied, a progress bar shows the step, the percentage done and an estimate of the time left (in both views).
-- **Recommended preset.** A curated list marked with a *Recommended* badge: performance and privacy tweaks, hidden taskbar search, bloat apps removed (only Teams and the default Media Player and Movies & TV players are kept), bloat services set to start on demand (Xbox, Phone Link, Fax, Remote Registry, IP Helper, diagnostics), and every non-essential startup app off. Drivers, audio, touchpad, GPU, security, sync, VPN, remote access and G-Helper stay on. Everything except the removed apps can be undone with one click.
+- **Recommended preset.** A curated list marked with a *Recommended* badge: performance and privacy tweaks, hidden taskbar search, bloat apps removed (only Teams and the default Media Player and Movies & TV players are kept), bloat services set to start on demand (Xbox, Phone Link, Fax, Remote Registry, IP Helper, diagnostics), every non-essential startup app off (classic and Microsoft Store apps), and the gaming basics: Game Mode, windowed-game optimizations, raw mouse input, no Game Bar, Game DVR or Sticky Keys pop-ups. Drivers, audio, touchpad, GPU, printers, security, sync, VPN, remote access, databases and G-Helper stay on. Everything except the removed apps can be undone with one click.
+- **Maximum preset.** Everything in Recommended, plus the bigger RAM and process savings, marked with a *Maximum* badge: services grouped into fewer svchost processes, Teams and every other non-essential startup app off (Teams stays installed and opens normally), non-essential third-party auto-start services set to Manual, Error Reporting, the AI Fabric service and (Windows 10) the Ndu driver off. Deliberately left alone so nothing essential breaks: Night light (Connected Devices Platform), Snipping Tool, printing and Print to PDF, Bluetooth, Windows Hello, Windows Search, Remote Desktop, background-app notifications, Memory Integrity and thumbnails. All of it can be undone with one click.
 - **Other presets.** *Privacy* and *Gaming* also only move switches; nothing happens until you press Apply. They never pre-select **Advanced** items (such as turning off Memory Integrity) or anything that cannot be undone (app removals); the log lists those so you can decide yourself. On laptops, *Gaming* also skips the Ultimate Performance plan. *Reset* returns every switch to the current system state.
 - **Visual Effects presets.** *Maximize looks*, *Recommended* and *Maximize performance* set the switches; after Apply, the effects change instantly, without a sign-out.
 - **Save and load your selection** as a JSON file (you choose where) to reuse on other PCs, also unattended from the command line.
@@ -179,7 +180,7 @@ The same engine runs without a window, for example to set up several PCs the sam
 
 ```powershell
 .\DebloatHub.ps1 -Preset Debloat                 # same as the Simple view's Debloat button
-.\DebloatHub.ps1 -Preset Gaming                  # Debloat + Gaming
+.\DebloatHub.ps1 -Preset Maximum                 # same as the Simple view's Maximum button
 .\DebloatHub.ps1 -Preset Undo                    # put back everything DebloatHub changed
 .\DebloatHub.ps1 -Selection .\my-selection.json  # a file saved with "Save selection"
 ```
